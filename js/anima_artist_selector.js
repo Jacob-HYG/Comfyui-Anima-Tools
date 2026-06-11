@@ -99,6 +99,10 @@ async function openArtistSelectorModal(node, tagsWidget) {
     const CDN_STORAGE_KEY = "anima-selector-active-cdn";
     let activeCdn = localStorage.getItem(CDN_STORAGE_KEY) || "jsdelivr";
 
+    // 本地图片缓存模式 (持久化，适合离线或慢速网络环境)
+    const CACHE_STORAGE_KEY = "anima-selector-use-cache";
+    let cacheMode = localStorage.getItem(CACHE_STORAGE_KEY) === "true";
+
     // 记忆排序、页数和滚动位置配置 (本地持久化读取)
     const SORT_STORAGE_KEY = "anima-selector-active-sort";
     const PAGE_STORAGE_KEY = "anima-selector-active-page";
@@ -519,6 +523,19 @@ async function openArtistSelectorModal(node, tagsWidget) {
         } else {
             return `https://cdn.statically.io/gh/ThetaCursed/Anima-Assets/main/images/${partition}/${id}.webp`;
         }
+    }
+
+    // 根据缓存模式返回 CDN 直连 URL 或本地缓存代理 URL
+    function getImageUrl(partition, id) {
+        const cdnUrl = getImgUrl(partition, id);
+        if (cacheMode) {
+            return `/anima-tools/cached-image?url=${encodeURIComponent(cdnUrl)}`;
+        }
+        return cdnUrl;
+    }
+
+    function getCacheProxyUrl(cdnUrl) {
+        return `/anima-tools/cached-image?url=${encodeURIComponent(cdnUrl)}`;
     }
 
     // 2. 创建 Modal DOM
@@ -945,9 +962,58 @@ async function openArtistSelectorModal(node, tagsWidget) {
     cdnSelect.onchange = () => {
         activeCdn = cdnSelect.value;
         localStorage.setItem(CDN_STORAGE_KEY, activeCdn);
-        renderCurrentPage(); 
+        renderCurrentPage();
     };
     filterControls.appendChild(cdnSelect);
+
+    // 缓存模式切换按钮 (本地持久化图片缓存)
+    const cacheToggleBtn = document.createElement("button");
+    cacheToggleBtn.className = "anima-btn";
+    cacheToggleBtn.innerHTML = `
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+            <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+            <line x1="12" y1="22.08" x2="12" y2="12"></line>
+        </svg>
+        ${cacheMode ? t("Cache: ON") : t("Cache: OFF")}
+    `;
+    cacheToggleBtn.title = t("Toggle local image cache mode");
+    if (cacheMode) {
+        cacheToggleBtn.style.background = "rgba(34, 197, 94, 0.15)";
+        cacheToggleBtn.style.borderColor = "rgba(34, 197, 94, 0.4)";
+        cacheToggleBtn.style.color = "#4ade80";
+    }
+    cacheToggleBtn.onclick = () => {
+        cacheMode = !cacheMode;
+        localStorage.setItem(CACHE_STORAGE_KEY, cacheMode.toString());
+        if (cacheMode) {
+            cacheToggleBtn.innerHTML = `
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                    <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+                    <line x1="12" y1="22.08" x2="12" y2="12"></line>
+                </svg>
+                ${t("Cache: ON")}
+            `;
+            cacheToggleBtn.style.background = "rgba(34, 197, 94, 0.15)";
+            cacheToggleBtn.style.borderColor = "rgba(34, 197, 94, 0.4)";
+            cacheToggleBtn.style.color = "#4ade80";
+        } else {
+            cacheToggleBtn.innerHTML = `
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                    <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+                    <line x1="12" y1="22.08" x2="12" y2="12"></line>
+                </svg>
+                ${t("Cache: OFF")}
+            `;
+            cacheToggleBtn.style.background = "";
+            cacheToggleBtn.style.borderColor = "";
+            cacheToggleBtn.style.color = "";
+        }
+        renderCurrentPage();
+    };
+    filterControls.appendChild(cacheToggleBtn);
 
 
 
@@ -2037,7 +2103,8 @@ async function openArtistSelectorModal(node, tagsWidget) {
                 img.loading = "lazy";
                 
                 const partition = item.p || 1;
-                img.src = getImgUrl(partition, item.id);
+                const originalSrc = getImgUrl(partition, item.id);
+                img.src = cacheMode ? getCacheProxyUrl(originalSrc) : originalSrc;
                 
                 let loader = null;
                 if (img.complete && img.naturalWidth !== 0) {
@@ -2056,9 +2123,15 @@ async function openArtistSelectorModal(node, tagsWidget) {
                     loader?.remove();
                 };
                 img.onerror = () => {
+                    // 如果还没尝试过缓存代理，则回退到本地缓存
+                    if (!img.dataset.cacheTried && !cacheMode) {
+                        img.dataset.cacheTried = "1";
+                        img.src = getCacheProxyUrl(originalSrc);
+                        return;
+                    }
                     img.style.display = "none";
                     loader?.remove();
-                    placeholder.style.opacity = "1"; 
+                    placeholder.style.opacity = "1";
                 };
                 card.appendChild(img);
             }

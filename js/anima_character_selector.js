@@ -94,8 +94,10 @@ async function openCharacterSelectorModal(node, tagsWidget) {
     const SCROLL_STORAGE_KEY = "anima-char-selector-active-scroll";
     const SIDEBAR_STORAGE_KEY = "anima-char-selector-active-sidebar-category";
     const SIDEBAR_SCROLL_STORAGE_KEY = "anima-char-selector-sidebar-scroll";
+    const CACHE_STORAGE_KEY = "anima-char-selector-use-cache";
 
     let activeSort = localStorage.getItem(SORT_STORAGE_KEY) || "works-desc";
+    let cacheMode = localStorage.getItem(CACHE_STORAGE_KEY) === "true";
     
     // 多维联合分类过滤器对象，存储各个维度的当前选中值
     let activeFilters = {
@@ -551,6 +553,19 @@ async function openCharacterSelectorModal(node, tagsWidget) {
         return `https://blobs.animadex.net/Outputs/thumbs/${encodeURIComponent(rawName)}.webp`;
     }
 
+    // 根据缓存模式返回 CDN 直连 URL 或本地缓存代理 URL
+    function getImageUrl(name, copyright) {
+        const cdnUrl = getImgUrl(name, copyright);
+        if (cacheMode) {
+            return `/anima-tools/cached-image?url=${encodeURIComponent(cdnUrl)}`;
+        }
+        return cdnUrl;
+    }
+
+    function getCacheProxyUrl(cdnUrl) {
+        return `/anima-tools/cached-image?url=${encodeURIComponent(cdnUrl)}`;
+    }
+
     // 保存收藏列表到本地
     function saveFavoritesLocal() {
         localStorage.setItem("anima-character-favorites-list", JSON.stringify(Array.from(favoriteSet)));
@@ -947,7 +962,54 @@ async function openCharacterSelectorModal(node, tagsWidget) {
     };
     filterControls.appendChild(sortSelect);
 
-    filterControls.appendChild(sortSelect);
+    // 缓存模式切换按钮 (本地持久化图片缓存)
+    const cacheToggleBtn = document.createElement("button");
+    cacheToggleBtn.className = "anima-btn";
+    cacheToggleBtn.innerHTML = `
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+            <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+            <line x1="12" y1="22.08" x2="12" y2="12"></line>
+        </svg>
+        ${cacheMode ? t("Cache: ON") : t("Cache: OFF")}
+    `;
+    cacheToggleBtn.title = t("Toggle local image cache mode");
+    if (cacheMode) {
+        cacheToggleBtn.style.background = "rgba(34, 197, 94, 0.15)";
+        cacheToggleBtn.style.borderColor = "rgba(34, 197, 94, 0.4)";
+        cacheToggleBtn.style.color = "#4ade80";
+    }
+    cacheToggleBtn.onclick = () => {
+        cacheMode = !cacheMode;
+        localStorage.setItem(CACHE_STORAGE_KEY, cacheMode.toString());
+        if (cacheMode) {
+            cacheToggleBtn.innerHTML = `
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                    <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+                    <line x1="12" y1="22.08" x2="12" y2="12"></line>
+                </svg>
+                ${t("Cache: ON")}
+            `;
+            cacheToggleBtn.style.background = "rgba(34, 197, 94, 0.15)";
+            cacheToggleBtn.style.borderColor = "rgba(34, 197, 94, 0.4)";
+            cacheToggleBtn.style.color = "#4ade80";
+        } else {
+            cacheToggleBtn.innerHTML = `
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                    <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+                    <line x1="12" y1="22.08" x2="12" y2="12"></line>
+                </svg>
+                ${t("Cache: OFF")}
+            `;
+            cacheToggleBtn.style.background = "";
+            cacheToggleBtn.style.borderColor = "";
+            cacheToggleBtn.style.color = "";
+        }
+        renderCurrentPage();
+    };
+    filterControls.appendChild(cacheToggleBtn);
 
     // 右侧：功能按钮
     const actionControls = document.createElement("div");
@@ -2351,7 +2413,8 @@ async function openCharacterSelectorModal(node, tagsWidget) {
                     transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
                 `;
                 img.loading = "lazy";
-                img.src = getImgUrl(item.name, item.copyright);
+                const originalSrc = getImgUrl(item.name, item.copyright);
+                img.src = cacheMode ? getCacheProxyUrl(originalSrc) : originalSrc;
                 
                 let loader = null;
                 if (img.complete && img.naturalWidth !== 0) {
@@ -2370,6 +2433,12 @@ async function openCharacterSelectorModal(node, tagsWidget) {
                     loader?.remove();
                 };
                 img.onerror = () => {
+                    // 如果还没尝试过缓存代理，则回退到本地缓存
+                    if (!img.dataset.cacheTried && !cacheMode) {
+                        img.dataset.cacheTried = "1";
+                        img.src = getCacheProxyUrl(originalSrc);
+                        return;
+                    }
                     img.style.display = "none";
                     loader?.remove();
                     placeholder.style.opacity = "1";

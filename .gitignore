@@ -20,3 +20,6 @@ Desktop.ini
 # Antigravity CLI temporary workspace files
 .antigravitycli/
 .gemini/
+
+# Anima-Tools image cache
+temp/
