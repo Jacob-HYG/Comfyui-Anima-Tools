@@ -67,7 +67,8 @@
       }
     },
     "outputs": {
-      "0": { "name": "文本" }
+      "0": { "name": "文本" },
+      "1": { "name": "角色列表" }
     }
   },
   "AnimaCharacterTagSelectorPlus": {
@@ -88,7 +89,8 @@
       }
     },
     "outputs": {
-      "0": { "name": "文本" }
+      "0": { "name": "文本" },
+      "1": { "name": "角色列表" }
     }
   },
   "AnimaMultiLoraLoader": {

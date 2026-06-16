@@ -8,13 +8,14 @@ class AnimaArtistTagSelector:
             },
             "optional": {
                 "opt_prompt": ("STRING", {"forceInput": True}),
-            }
+            },
         }
 
     RETURN_TYPES = ("STRING",)
     RETURN_NAMES = ("text",)
     FUNCTION = "process_tags"
     CATEGORY = "AnimaArt"
+
     def process_tags(self, artist_tags, mode, opt_prompt=""):
         tags_list = [t.strip() for t in artist_tags.split(",") if t.strip()]
         processed_tags = []
@@ -57,6 +58,7 @@ class AnimaArtistTagSelector:
 
         return (final_text,)
 
+
 class AnimaArtistTagSelectorPlus:
     @classmethod
     def INPUT_TYPES(cls):
@@ -77,7 +79,7 @@ class AnimaArtistTagSelectorPlus:
         # 1. 过滤并处理画师 tags
         tags_list = [t.strip() for t in artist_tags.split(",") if t.strip()]
         processed_tags = []
-        
+
         for tag in tags_list:
             if tag.startswith("_raw_:"):
                 processed_tags.append(tag[6:])
@@ -87,10 +89,10 @@ class AnimaArtistTagSelectorPlus:
                 clean_tag = clean_tag[1:].strip()
             elif clean_tag.lower().startswith("by "):
                 clean_tag = clean_tag[3:].strip()
-            
+
             if clean_tag:
                 processed_tags.append(f"@{clean_tag}")
-        
+
         joined_artists = ", ".join(processed_tags)
         # 🌟 只要有画师，尾部必带逗号与空格，保证输出框及默认状态下的绝对完美隔开
         if joined_artists:
@@ -98,7 +100,7 @@ class AnimaArtistTagSelectorPlus:
 
         # 2. 将两段自动拼接到一起 (画师在前，自定义提示词在后)
         extra_text_clean = extra_text.strip() if extra_text else ""
-        
+
         if extra_text_clean and joined_artists:
             # 画师在前，提示词在后
             # 🌟 智能合并去重：如果分隔符是逗号或被删空，则直接利用 joined_artists 尾部的逗号连接，避免产生多余的双逗号
@@ -115,6 +117,7 @@ class AnimaArtistTagSelectorPlus:
 
         return (final_text,)
 
+
 class AnimaCharacterTagSelector:
     @classmethod
     def INPUT_TYPES(cls):
@@ -125,18 +128,21 @@ class AnimaCharacterTagSelector:
             },
             "optional": {
                 "opt_prompt": ("STRING", {"forceInput": True}),
-            }
+            },
         }
 
-    RETURN_TYPES = ("STRING",)
-    RETURN_NAMES = ("text",)
+    RETURN_TYPES = ("STRING", "STRING")
+    RETURN_NAMES = (
+        "text",
+        "characters",
+    )
     FUNCTION = "process_tags"
     CATEGORY = "AnimaArt"
 
     def process_tags(self, character_tags, mode, opt_prompt=""):
         tags_list = [t.strip() for t in character_tags.split(",") if t.strip()]
         processed_tags = []
-        
+
         for tag in tags_list:
             if tag.startswith("_raw_:"):
                 processed_tags.append(tag[6:])
@@ -144,10 +150,10 @@ class AnimaCharacterTagSelector:
             clean_tag = tag
             if clean_tag.startswith("@"):
                 clean_tag = clean_tag[1:].strip()
-            
+
             if clean_tag:
                 processed_tags.append(clean_tag)
-        
+
         joined_characters = ", ".join(processed_tags)
 
         if opt_prompt and opt_prompt.strip():
@@ -172,7 +178,8 @@ class AnimaCharacterTagSelector:
             else:
                 final_text = ""
 
-        return (final_text,)
+        return (final_text, joined_characters)
+
 
 class AnimaCharacterTagSelectorPlus:
     @classmethod
@@ -185,15 +192,15 @@ class AnimaCharacterTagSelectorPlus:
             }
         }
 
-    RETURN_TYPES = ("STRING",)
-    RETURN_NAMES = ("text",)
+    RETURN_TYPES = ("STRING", "STRING")
+    RETURN_NAMES = ("text", "characters")
     FUNCTION = "process_tags"
     CATEGORY = "AnimaArt"
 
     def process_tags(self, character_tags, extra_text, separator=", "):
         tags_list = [t.strip() for t in character_tags.split(",") if t.strip()]
         processed_tags = []
-        
+
         for tag in tags_list:
             if tag.startswith("_raw_:"):
                 processed_tags.append(tag[6:])
@@ -201,16 +208,16 @@ class AnimaCharacterTagSelectorPlus:
             clean_tag = tag
             if clean_tag.startswith("@"):
                 clean_tag = clean_tag[1:].strip()
-            
+
             if clean_tag:
                 processed_tags.append(clean_tag)
-        
+
         joined_characters = ", ".join(processed_tags)
         if joined_characters:
             joined_characters += ", "
 
         extra_text_clean = extra_text.strip() if extra_text else ""
-        
+
         if extra_text_clean and joined_characters:
             sep = separator if separator is not None else ", "
             if sep.strip() == "," or sep.strip() == "":
@@ -222,7 +229,8 @@ class AnimaCharacterTagSelectorPlus:
         else:
             final_text = joined_characters
 
-        return (final_text,)
+        return (final_text, joined_characters)
+
 
 class AnimaMultiLoraLoader:
     @classmethod
@@ -335,15 +343,18 @@ try:
 except ImportError:
     Image = None
 
+
 def get_favorites_path():
     try:
         user_dir = folder_paths.get_user_directory()
     except AttributeError:
         # 降级方案：寻找 ComfyUI 根目录下的 user 文件夹
-        user_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "user"))
+        user_dir = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "user")
+        )
         if not os.path.exists(user_dir):
             user_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "user"))
-    
+
     os.makedirs(user_dir, exist_ok=True)
     return os.path.join(user_dir, "anima_tools_favorites.json")
 
@@ -351,7 +362,7 @@ def get_default_favorites_data():
     return {
         "artist": {
             "groups": [{"id": "default", "name": "默认收藏", "isSystem": True}],
-            "items": []
+            "items": [],
         },
         "character": {
             "groups": [{"id": "default", "name": "默认收藏", "isSystem": True}],
@@ -413,6 +424,7 @@ def merge_favorites_data(existing, incoming):
 async def get_favorites_api(request):
     return web.json_response(load_favorites_data())
 
+
 @PromptServer.instance.routes.post("/anima-tools/favorites")
 async def save_favorites_api(request):
     try:
@@ -440,7 +452,7 @@ async def save_favorites_api(request):
         tmp_path = path + ".tmp"
         with open(tmp_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
-            
+
         os.replace(tmp_path, path)
         return web.json_response({"success": True, "path": path})
     except Exception as e:
@@ -1427,12 +1439,14 @@ async def lora_delete_local_api(request):
 
 # ----------------- 图片缓存系统 -----------------
 
+
 def get_temp_path():
     """获取 temp 缓存目录路径"""
     plugin_dir = os.path.dirname(os.path.abspath(__file__))
     temp_dir = os.path.join(plugin_dir, "temp")
     os.makedirs(temp_dir, exist_ok=True)
     return temp_dir
+
 
 def get_cache_filename(url):
     """根据 URL 生成缓存文件名 (MD5 hash + 扩展名)"""
@@ -1446,6 +1460,7 @@ def get_cache_filename(url):
         ext = ".webp"
     return url_hash + ext
 
+
 # 允许缓存代理访问的域名白名单 (防止 SSRF 滥用)
 ALLOWED_CACHE_DOMAINS = [
     "fastly.jsdelivr.net",
@@ -1454,11 +1469,14 @@ ALLOWED_CACHE_DOMAINS = [
     "blobs.animadex.net",
 ]
 
+
 def is_allowed_cache_url(url):
     """检查 URL 是否属于允许的 CDN 域名"""
     from urllib.parse import urlparse
+
     parsed = urlparse(url)
     return any(parsed.netloc.endswith(domain) for domain in ALLOWED_CACHE_DOMAINS)
+
 
 @PromptServer.instance.routes.get("/anima-tools/cached-image")
 async def get_cached_image(request):
@@ -1486,10 +1504,13 @@ async def get_cached_image(request):
             content_type = "image/png"
         elif cache_path.endswith(".jpg"):
             content_type = "image/jpeg"
-        return web.FileResponse(cache_path, headers={
-            "Content-Type": content_type,
-            "X-Cache": "HIT",
-        })
+        return web.FileResponse(
+            cache_path,
+            headers={
+                "Content-Type": content_type,
+                "X-Cache": "HIT",
+            },
+        )
 
     # 未命中 → 从 CDN 下载并缓存
     try:
@@ -1504,16 +1525,20 @@ async def get_cached_image(request):
                         f.write(data)
                     os.replace(tmp_path, cache_path)
                     content_type = resp.headers.get("Content-Type", "image/webp")
-                    return web.Response(body=data, headers={
-                        "Content-Type": content_type,
-                        "X-Cache": "MISS",
-                    })
+                    return web.Response(
+                        body=data,
+                        headers={
+                            "Content-Type": content_type,
+                            "X-Cache": "MISS",
+                        },
+                    )
                 else:
                     print(f"[Anima Tools] CDN returned {resp.status} for: {url}")
     except Exception as e:
         print(f"[Anima Tools] Failed to cache image: {e}")
 
     return web.Response(status=404)
+
 
 @PromptServer.instance.routes.post("/anima-tools/clear-cache")
 async def clear_cache_api(request):
@@ -1530,6 +1555,7 @@ async def clear_cache_api(request):
     except Exception as e:
         return web.json_response({"success": False, "error": str(e)})
 
+
 @PromptServer.instance.routes.get("/anima-tools/cache-stats")
 async def cache_stats_api(request):
     """返回缓存统计信息"""
@@ -1542,12 +1568,15 @@ async def cache_stats_api(request):
             if os.path.isfile(fpath):
                 file_count += 1
                 total_size += os.path.getsize(fpath)
-        return web.json_response({
-            "file_count": file_count,
-            "total_size_bytes": total_size,
-            "total_size_mb": round(total_size / (1024 * 1024), 2),
-        })
+        return web.json_response(
+            {
+                "file_count": file_count,
+                "total_size_bytes": total_size,
+                "total_size_mb": round(total_size / (1024 * 1024), 2),
+            }
+        )
     except Exception as e:
         return web.json_response({"error": str(e)})
+
 
 
