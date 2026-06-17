@@ -262,3 +262,52 @@ img.onerror = () => {
 3. **域名白名单**：如需添加新的图片源，编辑 `nodes.py` 中的 `ALLOWED_CACHE_DOMAINS` 列表
 4. **磁盘空间**：每张图片约 10-50KB，缓存 1000 张约占用 10-50MB
 5. **跨会话持久化**：缓存文件和 `localStorage` 中的 Cache 模式设置均跨 ComfyUI 重启保留
+
+---
+
+## 七、上游同步记录
+
+> 操作时间：2026-06-17
+
+### 同步策略
+
+通过 `git rebase upstream/main` 将本地 2 个提交 replay 到上游最新 5 个提交之上，保持线性历史。
+
+### 合并结果
+
+```
+f55ef17  feat: 角色Tag选择器添加输出角色列表          ← 本地 (最新)
+9b460c1  feat: 添加本地持久化图片缓存功能              ← 本地
+8f7b889  chore: release 1.2.0                         ← 上游
+11e064f  Release 1.1.1 cache cleanup                  ← 上游
+07b7dc7  Release Anima LoRA loader v1.1.0              ← 上游
+5728839  Optimize LoRA selector previews and caching   ← 上游
+2f5f518  feat: 优化本地LoRA预览图同目录加载            ← 上游
+7d83c4f  feat: change prompt concat order...           ← 共同祖先
+```
+
+### 冲突文件及解决
+
+| 文件 | 冲突类型 | 解决方式 |
+|------|----------|----------|
+| `nodes.py` | 上游新增 LoRA Loader + Animadex API (~1100行) vs 本地缓存系统 (~220行) | 保留双方代码，上游在前、缓存在后 |
+| `nodes.py` | 上游新增 favorites merge 逻辑 vs 本地格式化改动 | 保留上游（更完善的数据合并方案） |
+| `js/anima_artist_selector.js` | 上游懒加载 (`imgUrl`) vs 本地缓存回退 (`originalSrc`) | 合并：保留 `imgUrl` 供懒加载 + `originalSrc` 供 onerror 回退 |
+| `js/anima_character_selector.js` | 上游角色缓存函数 vs 本地 `getImageUrl`/`getCacheProxyUrl` | 保留双方函数 |
+| `js/anima_character_selector.js` | 同上懒加载 vs 缓存回退模式 | 同 artist_selector 合并方案 |
+
+### 上游新增功能概览
+
+| 上游提交 | 新增内容 | 潜在关联 |
+|----------|----------|----------|
+| `8f7b889` | chore: release 1.2.0 | 版本号更新 |
+| `11e064f` | Release 1.1.1 cache cleanup | 上游也有缓存清理概念，与本地缓存系统独立共存 |
+| `07b7dc7` | Anima LoRA loader v1.1.0 | 新增 `AnimaMultiLoraLoader` 节点 + `anima_lora_api.py` |
+| `5728839` | LoRA selector previews optimization | 前端 `anima_lora_selector.js` (~3533行新文件) |
+| `2f5f518` | 本地LoRA预览图同目录加载 | 优化 LoRA 预览图加载路径 |
+
+### 关键合并决策
+
+1. **favorites 持久化**：上游重构了 favorites 存储逻辑（新增 `merge_favorites_data`、`normalize_favorites_data`、备份机制、LoRA 收藏分组），本地格式化改动（尾逗号、空行）让位于上游更完善的功能
+2. **图片加载**：上游加了懒加载 + 图片缓存 (`isImageLoaded`/`markImageLoaded`)，本地加了缓存代理模式，两者互补合并
+3. **路由注册**：上游新增了多个 API 端点（LoRA 管理、Animadex 角色搜索），与本地 3 个缓存端点互不干扰
