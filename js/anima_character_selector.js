@@ -1649,6 +1649,26 @@ async function openCharacterSelectorModal(node, tagsWidget) {
         await applySelectionAndClose(false);
     };
 
+    const applyNamesBtn = document.createElement("button");
+    applyNamesBtn.className = "anima-btn";
+    applyNamesBtn.innerText = t("Apply Names");
+    applyNamesBtn.onclick = () => {
+        const selectedItems = Array.from(selectedCharacters);
+        let resultString = selectedItems.join(", ");
+        if (resultString) {
+            resultString += ", ";
+        }
+        tagsWidget.value = resultString;
+        if (tagsWidget.inputEl) {
+            tagsWidget.inputEl.value = resultString;
+            tagsWidget.inputEl.dispatchEvent(new Event("input"));
+        }
+        if (tagsWidget.callback) {
+            tagsWidget.callback(resultString);
+        }
+        closeModal();
+    };
+
     const applyTriggerTagsBtn = document.createElement("button");
     applyTriggerTagsBtn.className = "anima-btn anima-btn-primary";
     applyTriggerTagsBtn.innerText = t("Apply Trigger + Tags");
@@ -1664,6 +1684,7 @@ async function openCharacterSelectorModal(node, tagsWidget) {
             return custItem || characterMap.get(selName) || { name: selName };
         });
 
+        applyNamesBtn.disabled = true;
         applyTriggerBtn.disabled = true;
         applyTriggerTagsBtn.disabled = true;
         if (includeTags) {
@@ -1700,6 +1721,7 @@ async function openCharacterSelectorModal(node, tagsWidget) {
     }
 
     footerButtons.appendChild(cancelBtn);
+    footerButtons.appendChild(applyNamesBtn);
     footerButtons.appendChild(applyTriggerBtn);
     footerButtons.appendChild(applyTriggerTagsBtn);
     footer.appendChild(countLabel);
