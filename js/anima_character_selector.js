@@ -169,6 +169,15 @@ async function openCharacterSelectorModal(node, tagsWidget) {
         }
     });
 
+    // 隐藏字段：始终记录纯角色名列表，供后端 characters 输出端口使用
+    const characterNamesWidget = node.widgets.find(w => w.name === "_character_names");
+    function updateCharacterNamesWidget() {
+        if (characterNamesWidget) {
+            const names = Array.from(selectedCharacters).join(", ");
+            characterNamesWidget.value = names ? names + ", " : "";
+        }
+    }
+
     // 加载后端持久化配置
     let favoritesConfig = {
         character: {
@@ -1653,6 +1662,7 @@ async function openCharacterSelectorModal(node, tagsWidget) {
     applyNamesBtn.className = "anima-btn";
     applyNamesBtn.innerText = t("Apply Names");
     applyNamesBtn.onclick = () => {
+        updateCharacterNamesWidget();
         const selectedItems = Array.from(selectedCharacters);
         let resultString = selectedItems.join(", ");
         if (resultString) {
@@ -1678,6 +1688,7 @@ async function openCharacterSelectorModal(node, tagsWidget) {
 
     // 确认应用并关闭弹窗
     async function applySelectionAndClose(includeTags = false) {
+        updateCharacterNamesWidget();
         const characterMap = new Map((window.characterData || []).map(item => [item.name, item]));
         const selectedItems = Array.from(selectedCharacters).map(selName => {
             const custItem = favoriteItems.find(fi => fi.isCustom && fi.name === selName);

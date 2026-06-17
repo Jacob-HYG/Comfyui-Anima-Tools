@@ -129,6 +129,9 @@ class AnimaCharacterTagSelector:
             "optional": {
                 "opt_prompt": ("STRING", {"forceInput": True}),
             },
+            "hidden": {
+                "_character_names": ("STRING", {"default": ""}),
+            },
         }
 
     RETURN_TYPES = ("STRING", "STRING")
@@ -139,7 +142,7 @@ class AnimaCharacterTagSelector:
     FUNCTION = "process_tags"
     CATEGORY = "AnimaArt"
 
-    def process_tags(self, character_tags, mode, opt_prompt=""):
+    def process_tags(self, character_tags, mode, opt_prompt="", _character_names=""):
         tags_list = [t.strip() for t in character_tags.split(",") if t.strip()]
         processed_tags = []
 
@@ -178,7 +181,9 @@ class AnimaCharacterTagSelector:
             else:
                 final_text = ""
 
-        return (final_text, joined_characters)
+        # 角色名输出：优先使用前端传入的纯角色名列表
+        character_output = _character_names if _character_names else joined_characters
+        return (final_text, character_output)
 
 
 class AnimaCharacterTagSelectorPlus:
@@ -189,7 +194,10 @@ class AnimaCharacterTagSelectorPlus:
                 "character_tags": ("STRING", {"multiline": True, "default": ""}),
                 "extra_text": ("STRING", {"multiline": True, "default": ""}),
                 "separator": ("STRING", {"default": ", "}),
-            }
+            },
+            "hidden": {
+                "_character_names": ("STRING", {"default": ""}),
+            },
         }
 
     RETURN_TYPES = ("STRING", "STRING")
@@ -197,7 +205,7 @@ class AnimaCharacterTagSelectorPlus:
     FUNCTION = "process_tags"
     CATEGORY = "AnimaArt"
 
-    def process_tags(self, character_tags, extra_text, separator=", "):
+    def process_tags(self, character_tags, extra_text, separator=", ", _character_names=""):
         tags_list = [t.strip() for t in character_tags.split(",") if t.strip()]
         processed_tags = []
 
@@ -229,7 +237,9 @@ class AnimaCharacterTagSelectorPlus:
         else:
             final_text = joined_characters
 
-        return (final_text, joined_characters)
+        # 角色名输出：优先使用前端传入的纯角色名列表
+        character_output = _character_names if _character_names else joined_characters
+        return (final_text, character_output)
 
 
 class AnimaMultiLoraLoader:
