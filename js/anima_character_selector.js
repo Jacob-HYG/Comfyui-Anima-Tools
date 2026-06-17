@@ -39,6 +39,30 @@ app.registerExtension({
 
                 // 找到 character_tags widget
                 const characterTagsWidget = this.widgets.find(w => w.name === "character_tags");
+
+                // 确保 _character_names 隐藏 widget 存在（供后端 characters 输出端口使用）
+                let characterNamesWidget = this.widgets.find(w => w.name === "_character_names");
+                if (!characterNamesWidget) {
+                    characterNamesWidget = this.addWidget("string", "_character_names", "", () => {}, { hidden: true });
+                }
+                // 完全隐藏该 widget（效仿 anima_lora_selector.js 的 hideJsonWidgetFully）
+                characterNamesWidget.type = "hidden";
+                characterNamesWidget.draw = () => {};
+                characterNamesWidget.computeSize = () => [0, -4];
+                if (characterNamesWidget.el) {
+                    characterNamesWidget.el.style.display = "none";
+                    characterNamesWidget.el.style.height = "0px";
+                    characterNamesWidget.el.style.padding = "0px";
+                    characterNamesWidget.el.style.margin = "0px";
+                    characterNamesWidget.el.style.visibility = "hidden";
+                }
+                if (characterNamesWidget.inputEl) {
+                    characterNamesWidget.inputEl.style.display = "none";
+                    characterNamesWidget.inputEl.style.height = "0px";
+                    characterNamesWidget.inputEl.style.padding = "0px";
+                    characterNamesWidget.inputEl.style.margin = "0px";
+                    characterNamesWidget.inputEl.style.visibility = "hidden";
+                }
                 
                 // 添加打开选择器的按钮，并注入极致 premium 设计的霓虹粉发光样式
                 const btnWidget = this.addWidget("button", t("Open Character Selector"), null, async () => {
