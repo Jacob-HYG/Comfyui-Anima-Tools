@@ -811,6 +811,7 @@ async function openCharacterSelectorModal(node, tagsWidget) {
             empty.innerText = state === "error" ? t("Official tags unavailable") : t("No tags available");
             chipsEl.appendChild(empty);
         }
+    }
 
     // 根据缓存模式返回 CDN 直连 URL 或本地缓存代理 URL
     function getImageUrl(name, copyright) {
