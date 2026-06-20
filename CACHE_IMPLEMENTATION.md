@@ -267,13 +267,9 @@ img.onerror = () => {
 
 ## 七、上游同步记录
 
-> 操作时间：2026-06-17
-
-### 同步策略
+### 同步记录 #1 — 2026-06-17
 
 通过 `git rebase upstream/main` 将本地 2 个提交 replay 到上游最新 5 个提交之上，保持线性历史。
-
-### 合并结果
 
 ```
 f55ef17  feat: 角色Tag选择器添加输出角色列表          ← 本地 (最新)
@@ -286,7 +282,7 @@ f55ef17  feat: 角色Tag选择器添加输出角色列表          ← 本地 (�
 7d83c4f  feat: change prompt concat order...           ← 共同祖先
 ```
 
-### 冲突文件及解决
+#### 冲突文件及解决
 
 | 文件 | 冲突类型 | 解决方式 |
 |------|----------|----------|
@@ -296,7 +292,7 @@ f55ef17  feat: 角色Tag选择器添加输出角色列表          ← 本地 (�
 | `js/anima_character_selector.js` | 上游角色缓存函数 vs 本地 `getImageUrl`/`getCacheProxyUrl` | 保留双方函数 |
 | `js/anima_character_selector.js` | 同上懒加载 vs 缓存回退模式 | 同 artist_selector 合并方案 |
 
-### 上游新增功能概览
+#### 上游新增功能概览
 
 | 上游提交 | 新增内容 | 潜在关联 |
 |----------|----------|----------|
@@ -306,8 +302,70 @@ f55ef17  feat: 角色Tag选择器添加输出角色列表          ← 本地 (�
 | `5728839` | LoRA selector previews optimization | 前端 `anima_lora_selector.js` (~3533行新文件) |
 | `2f5f518` | 本地LoRA预览图同目录加载 | 优化 LoRA 预览图加载路径 |
 
-### 关键合并决策
+#### 关键合并决策
 
 1. **favorites 持久化**：上游重构了 favorites 存储逻辑（新增 `merge_favorites_data`、`normalize_favorites_data`、备份机制、LoRA 收藏分组），本地格式化改动（尾逗号、空行）让位于上游更完善的功能
 2. **图片加载**：上游加了懒加载 + 图片缓存 (`isImageLoaded`/`markImageLoaded`)，本地加了缓存代理模式，两者互补合并
 3. **路由注册**：上游新增了多个 API 端点（LoRA 管理、Animadex 角色搜索），与本地 3 个缓存端点互不干扰
+
+---
+
+### 同步记录 #2 — 2026-06-20
+
+通过 `git merge upstream/main` 将上游 v3.0.0 合并到本地 fork，保留全部 9 个本地提交。
+
+#### 同步策略
+
+上游发布 v3.0.0 大版本（2 commits：`a5836f7` v2.1.0, `f2dbeb8` release 3.0.0），
+本地已有 9 个 commits 在 `8f7b889` 之后。改用 merge（三向合并只解决一次冲突），
+避免 rebase 在 9 个 commits 上重复解决冲突。
+
+#### 合并结果
+
+```
+78e1770  Merge remote-tracking branch 'upstream/main' (v3.0.0)  ← 合并提交
+f2dbeb8  release 3.0.0                                          ← 上游 (最新)
+a5836f7  chore: bump version to 2.1.0                            ← 上游
+7c06516  fix: 在onNodeCreated中显式创建_character_names...       ← 本地
+17f33e1  feat: 角色选择器characters输出端口始终输出纯角色名      ← 本地
+48abca3  feat: 角色选择器新增'应用角色名'按钮，输出角色名称      ← 本地
+c8b146b  fix: 修复冲突解决时丢失的闭合括号，恢复角色选择器按钮  ← 本地
+08fa639  fix: 修复anima_lora_api.py的Pylance类型警告            ← 本地
+4f3e857  fix: 修复Pylance对hash.update(chunk)的类型误报          ← 本地
+1e0de4e  docs: 记录上游同步过程与冲突解决方案                    ← 本地
+f55ef17  feat: 角色Tag选择器添加输出角色列表                    ← 本地
+9b460c1  feat: 添加本地持久化图片缓存功能                        ← 本地
+8f7b889  chore: release 1.2.0                                   ← 共同祖先
+```
+
+#### 冲突文件及解决
+
+| 文件 | 冲突类型 | 解决方式 |
+|------|----------|----------|
+| `nodes.py` | 上游新增 3 个节点类 + `FAVORITE_SECTIONS` + clothing 收藏 vs 本地缓存系统 + character 输出端口 | 并集保留：上游节点在前、FAVORITE_SECTIONS 取上游、本地缓存系统在底、`_character_names`/双输出保留本地 |
+| `nodes.py` | NODE_CLASS_MAPPINGS / NODE_DISPLAY_NAME_MAPPINGS | 并集：上游 3 个新条目 + 本地尾逗号风格 |
+| `js/anima_artist_selector.js` | 上游 UI 重设计 + `createPromoLinks` + `cleanArtistToken` 重构 vs 本地 Cache 模式 (`cacheToggleBtn`/`getImageUrl`/`getCacheProxyUrl`) | 自动合并成功：上游样式 + 本地缓存功能共存 |
+| `js/anima_character_selector.js` | 上游删除反向同步 + 标签复制功能 + `headerActions` vs 本地保留反向同步 + 缓存 + `_character_names` + ApplyNames | 自动合并 + 手动恢复反向同步逻辑 + 自定义收藏反向同步 |
+| `js/i18n.js` | 上游大量新翻译键 vs 本地 "Apply Names" 键 | 自动合并成功，取并集 |
+
+#### 上游新增功能概览
+
+| 上游提交 | 新增内容 | 与本地的关系 |
+|----------|----------|-------------|
+| `f2dbeb8` | release 3.0.0 | 版本号更新至 3.0.0 |
+| `a5836f7` | chore: bump version to 2.1.0 | 版本号过渡 |
+| v3.0.0 | `AnimaClothingTagSelector` / Plus / `AnimaPromptComposer` | 3 个新节点 |
+| v3.0.0 | `js/clothing_data.js` + `js/anima_clothing_selector.js` | 服装选择器（6764+1914 行） |
+| v3.0.0 | `js/anima_prompt_composer.js` | 提示词合成器（611 行） |
+| v3.0.0 | `js/anima_promo_links.js` | 推广链接组件 |
+| v3.0.0 | `js/i18n.js` 大量新键 + `locales/` 目录 | 国际化扩展 |
+| v3.0.0 | artist/character 选择器 UI 重设计 | 分页器、按钮、配色全面更新 |
+| v3.0.0 | 角色选择器标签复制功能 | `copyCharacterText` / `showCharacterTagToast` |
+| v3.0.0 | 角色选择器删除反向同步 | 本地手动恢复（用户选择保留） |
+
+#### 关键合并决策
+
+1. **反向同步保留**：上游 v3.0.0 删除了打开角色选择器时从已有文本预勾选角色的逻辑（从空 `Set()` 开始），本地选择保留该功能，手动恢复了两段反向同步代码（角色数据匹配 + 自定义收藏匹配）
+2. **`_character_names` widget**：本地新增的隐藏 widget + 双输出端口 (`RETURN_TYPES = ("STRING", "STRING")`) 完整保留，确保 "characters" 输出端口正常工作
+3. **缓存系统独立共存**：上游未引入类似缓存机制，本地 3 个缓存 API 端点（`/anima-tools/cached-image`、`/clear-cache`、`/cache-stats`）与上游新增的 API 路由互不干扰
+4. **favorites 扩展**：上游新增 `FAVORITE_SECTIONS` 常量和 clothing 收藏分组，本地格式调整让位于上游更完善的方案

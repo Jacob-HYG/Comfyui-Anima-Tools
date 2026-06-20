@@ -234,9 +234,11 @@ async function openClothingSelectorModal(node, tagsWidget) {
     const SIDEBAR_SCROLL_STORAGE_KEY = "anima-clothing-selector-sidebar-scroll";
     const DISPLAY_LANG_STORAGE_KEY = "anima-clothing-selector-display-lang";
     const FILTER_STORAGE_KEY = "anima-clothing-selector-filters";
+    const CACHE_STORAGE_KEY = "anima-clothing-selector-use-cache";
 
     let activeSort = localStorage.getItem(SORT_STORAGE_KEY) || "id-asc";
     let displayLang = localStorage.getItem(DISPLAY_LANG_STORAGE_KEY) || "bilingual";
+    let cacheMode = localStorage.getItem(CACHE_STORAGE_KEY) === "true";
     let currentPage = parseInt(localStorage.getItem(PAGE_STORAGE_KEY), 10) || 1;
     let showSelectedOnly = false;
     let filteredData = [];
@@ -879,6 +881,11 @@ async function openClothingSelectorModal(node, tagsWidget) {
     header.appendChild(headerActions);
     container.appendChild(header);
 
+    // 根据缓存模式返回原始预览 URL 或本地缓存代理 URL
+    function getCacheProxyUrl(previewUrl) {
+        return `/anima-tools/cached-image?url=${encodeURIComponent(previewUrl)}`;
+    }
+
     const toolbar = createEl("div");
     toolbar.style.cssText = `
         padding: 14px 26px;
@@ -925,6 +932,32 @@ async function openClothingSelectorModal(node, tagsWidget) {
 
     filterControls.appendChild(sortSelect);
     filterControls.appendChild(langSelect);
+
+    // 缓存模式切换按钮 (本地持久化图片缓存)
+    const cacheToggleBtn = createEl("button", "anima-clothing-btn");
+    cacheToggleBtn.innerHTML = cacheMode ? t("Cache: ON") : t("Cache: OFF");
+    cacheToggleBtn.title = t("Toggle local image cache mode");
+    if (cacheMode) {
+        cacheToggleBtn.style.background = "rgba(34, 197, 94, 0.15)";
+        cacheToggleBtn.style.borderColor = "rgba(34, 197, 94, 0.4)";
+        cacheToggleBtn.style.color = "#4ade80";
+    }
+    cacheToggleBtn.onclick = () => {
+        cacheMode = !cacheMode;
+        localStorage.setItem(CACHE_STORAGE_KEY, cacheMode.toString());
+        cacheToggleBtn.innerText = cacheMode ? t("Cache: ON") : t("Cache: OFF");
+        if (cacheMode) {
+            cacheToggleBtn.style.background = "rgba(34, 197, 94, 0.15)";
+            cacheToggleBtn.style.borderColor = "rgba(34, 197, 94, 0.4)";
+            cacheToggleBtn.style.color = "#4ade80";
+        } else {
+            cacheToggleBtn.style.background = "";
+            cacheToggleBtn.style.borderColor = "";
+            cacheToggleBtn.style.color = "";
+        }
+        renderCurrentPage();
+    };
+    filterControls.appendChild(cacheToggleBtn);
 
     const actionControls = createEl("div");
     actionControls.style.cssText = "display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end;";
@@ -1449,8 +1482,9 @@ async function openClothingSelectorModal(node, tagsWidget) {
             img.alt = item.name || "";
             img.loading = "lazy";
             img.decoding = "async";
-            const imgUrl = item.preview;
-            if (isImageLoaded(imgUrl)) {
+            const originalSrc = item.preview;
+            const imgUrl = cacheMode ? getCacheProxyUrl(originalSrc) : originalSrc;
+            if (isImageLoaded(originalSrc)) {
                 img.src = imgUrl;
                 img.style.opacity = "1";
             } else {
@@ -1464,9 +1498,20 @@ async function openClothingSelectorModal(node, tagsWidget) {
                 img.style.opacity = "1";
                 placeholder.style.opacity = "0";
                 loader?.remove();
-                markImageLoaded(imgUrl);
+                markImageLoaded(originalSrc);
             };
             img.onerror = () => {
+                // 如果还没尝试过缓存代理，则回退到本地缓存
+                if (!img.dataset.cacheTried && cacheMode) {
+                    img.dataset.cacheTried = "1";
+                    img.src = originalSrc;
+                    return;
+                }
+                if (!img.dataset.cacheTried && !cacheMode) {
+                    img.dataset.cacheTried = "1";
+                    img.src = getCacheProxyUrl(originalSrc);
+                    return;
+                }
                 img.remove();
                 loader?.remove();
                 placeholder.style.opacity = "1";
