@@ -568,13 +568,13 @@ async function openArtistSelectorModal(node, tagsWidget) {
     function getImageUrl(partition, id) {
         const cdnUrl = getImgUrl(partition, id);
         if (cacheMode) {
-            return `/anima-tools/cached-image?url=${encodeURIComponent(cdnUrl)}`;
+            return `/anima-tools/cached-image?namespace=anima_artist_selector&url=${encodeURIComponent(cdnUrl)}`;
         }
         return cdnUrl;
     }
 
     function getCacheProxyUrl(cdnUrl) {
-        return `/anima-tools/cached-image?url=${encodeURIComponent(cdnUrl)}`;
+        return `/anima-tools/cached-image?namespace=anima_artist_selector&url=${encodeURIComponent(cdnUrl)}`;
     }
 
     // 2. 创建 Modal DOM

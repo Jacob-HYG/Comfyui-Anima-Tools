@@ -930,13 +930,13 @@ async function openCharacterSelectorModal(node, tagsWidget) {
     function getImageUrl(name, copyright) {
         const cdnUrl = getImgUrl(name, copyright);
         if (cacheMode) {
-            return `/anima-tools/cached-image?url=${encodeURIComponent(cdnUrl)}`;
+            return `/anima-tools/cached-image?namespace=anima_character_selector&url=${encodeURIComponent(cdnUrl)}`;
         }
         return cdnUrl;
     }
 
     function getCacheProxyUrl(cdnUrl) {
-        return `/anima-tools/cached-image?url=${encodeURIComponent(cdnUrl)}`;
+        return `/anima-tools/cached-image?namespace=anima_character_selector&url=${encodeURIComponent(cdnUrl)}`;
     }
 
     // 保存收藏列表到本地

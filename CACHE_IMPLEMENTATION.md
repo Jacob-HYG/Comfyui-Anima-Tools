@@ -1,10 +1,13 @@
 # 图片缓存系统 — 实现文档
 
-> 为 Comfyui-Anima-Tools 添加本地持久化图片缓存，解决离线/弱网环境下图片无法加载的问题。
+> `anima_cache.py` 模块提供可复用的 `ImageCache` 类，支持按 namespace 分文件夹存储。
+> 后端 API 端点 (`nodes.py`) 仅作为薄包装 (thin wrapper) 委托给该模块。
+> 前端 3 个选择器通过 `namespace=` 参数将缓存存入对应的子文件夹。
 
 ## 概述
 
-在插件根目录下创建 `temp/` 文件夹，通过后端 Python 缓存代理端点 + 前端智能回退逻辑，实现画师/角色预览图的本地持久化缓存。
+在插件根目录下的 `temp/` 文件夹中，按选择器名称创建子文件夹存储缓存的图片。
+通过后端 Python 缓存代理端点 + 前端智能回退逻辑，实现画师/角色/服装预览图的本地持久化缓存。
 
 ### 核心工作流
 
@@ -19,65 +22,62 @@
 
 ---
 
-## 修改文件清单
-
-| 文件 | 改动类型 | 说明 |
-|------|----------|------|
-| `nodes.py` | 新增功能 | 后端缓存代理 API (3 个端点) |
-| `js/anima_artist_selector.js` | 新增功能 + 微调 | 缓存按钮 + 图片加载回退 |
-| `js/anima_character_selector.js` | 新增功能 + Bug修复 | 缓存按钮 + 图片加载回退 + 修复重复 appendChild |
-| `.gitignore` | 配置 | 忽略 temp/ 目录 |
-
----
-
-## 一、后端 — nodes.py
-
-### 1.1 新增导入
-
-```python
-import aiohttp   # HTTP 客户端 (下载图片)
-import hashlib   # MD5 hash (生成缓存文件名)
-```
-
-### 1.2 缓存目录
+## 目录结构
 
 ```
 Comfyui-Anima-Tools/
-└── temp/                    ← 新增，自动创建，.gitignore 忽略
-    ├── a1b2c3d4...webp      ← MD5 hash 命名
-    ├── e5f6g7h8...png
-    └── ...
+├── anima_cache.py              ← 独立缓存模块 (ImageCache 类 + 工厂函数)
+├── nodes.py                    ← 3 个 API 端点 (薄包装)
+└── temp/                       ← 按 namespace 分文件夹存储
+    ├── anima_artist_selector/       # 画师预览图
+    │   ├── a1b2c3d4...webp
+    │   └── ...
+    ├── anima_character_selector/    # 角色预览图
+    │   ├── e5f6g7h8...png
+    │   └── ...
+    ├── anima_clothing_selector/     # 服装预览图
+    │   └── ...
+    ├── anima_background_selector/   # 背景预览图
+    │   └── ...
+    └── default/                     # 未指定 namespace 时的兜底
+        └── ...
 ```
 
-生成函数：
+---
+
+## 一、核心模块 — anima_cache.py
+
+独立可复用的缓存模块，不含 ComfyUI 特定依赖（除 `aiohttp` 外）。
+
+### `class ImageCache`
+
+| 方法 | 说明 |
+|------|------|
+| `__init__(namespace, cache_root, allowed_domains)` | 创建命名缓存实例 |
+| `_path(url) -> str` | URL → MD5 hash 文件名 |
+| `get_path(url) -> str | None` | 返回缓存文件路径，不存在则 None |
+| `get_content_type(url) -> str` | 自动判断 MIME（image/webp/png/jpeg） |
+| `is_allowed_url(url) -> bool` | 域名白名单校验 (SSRF 防护) |
+| `has(url) -> bool` | 检查是否已缓存 |
+| `fetch_and_cache(url, timeout) -> bytes | None` | 异步下载 → 原子写入 → 返回数据 |
+| `clear() -> int` | 清空该 namespace 所有缓存文件 |
+| `stats() -> dict` | 统计：文件数、总大小、namespace |
+
+### 工厂函数
 
 ```python
-def get_temp_path():
-    """获取 temp 缓存目录路径，不存在则自动创建"""
-    plugin_dir = os.path.dirname(os.path.abspath(__file__))
-    temp_dir = os.path.join(plugin_dir, "temp")
-    os.makedirs(temp_dir, exist_ok=True)
-    return temp_dir
+from anima_cache import get_cache
 
-def get_cache_filename(url):
-    """MD5(url) + 扩展名 → 唯一缓存文件名"""
-    url_hash = hashlib.md5(url.encode()).hexdigest()
-    # 根据 URL 中的扩展名决定后缀 (.webp / .png / .jpg)
-    ...
+cache = get_cache("anima_character_selector")  # 返回线程安全的单例
 ```
 
-### 1.3 API 端点
+### 线程安全
 
-#### `GET /anima-tools/cached-image?url=<encoded_url>`
+- 每个 `ImageCache` 实例拥有独立的 `threading.Lock()`
+- 写操作使用 `os.replace`（先写 `.tmp` 再原子重命名）
+- 工厂函数使用全局 `_registry_lock` 保护单例注册表
 
-图片缓存代理。核心逻辑：
-
-1. 校验 URL 域名是否在白名单内（安全防护）
-2. 检查 `temp/` 中是否已有缓存 → 有则直接返回（`X-Cache: HIT`）
-3. 无缓存则通过 `aiohttp` 异步下载 → 原子写入 `temp/` → 返回（`X-Cache: MISS`）
-4. 下载失败返回 404
-
-**域名白名单**（防止 SSRF 攻击）：
+### 域名白名单
 
 | 域名 | 用途 |
 |------|------|
@@ -86,97 +86,86 @@ def get_cache_filename(url):
 | `cdn.statically.io` | 画师图片 CDN (Statically) |
 | `blobs.animadex.net` | 角色图片 CDN (Animadex) |
 
-#### `POST /anima-tools/clear-cache`
+---
 
-清除所有缓存文件，返回删除数量。
+## 二、后端 API 端点 — nodes.py
 
-#### `GET /anima-tools/cache-stats`
+`nodes.py` 中原来的 5 个辅助函数 + 白名单已被移除，3 个 API 端点变成薄包装：
 
-返回缓存统计：文件数量、总大小 (bytes/MB)。
+### `GET /anima-tools/cached-image?namespace=...&url=...`
+
+| 参数 | 必填 | 说明 |
+|------|------|------|
+| `namespace` | 否 (默认 `"default"`) | 子文件夹名，如 `anima_artist_selector` |
+| `url` | 是 | 原始 CDN 图片 URL |
+
+流程：
+1. `get_cache(namespace).is_allowed_url(url)` → 白名单校验
+2. `get_cache(namespace).get_path(url)` → HIT → FileResponse
+3. `get_cache(namespace).fetch_and_cache(url)` → MISS → Response
+
+### `POST /anima-tools/clear-cache`
+
+| 请求体 | 说明 |
+|--------|------|
+| `{"namespace": "anima_artist_selector"}` | 仅清除该 namespace |
+| 空或 `{}` | 清除所有已知 namespace |
+
+### `GET /anima-tools/cache-stats`
+
+| Query | 说明 |
+|-------|------|
+| `?namespace=anima_artist_selector` | 仅查询该 namespace |
+| 无参数 | 聚合所有 namespace |
+
+命名空间常量（在 `nodes.py` 中定义）：
+
+```python
+CACHE_NAMESPACE_ARTIST = "anima_artist_selector"
+CACHE_NAMESPACE_CHARACTER = "anima_character_selector"
+CACHE_NAMESPACE_CLOTHING = "anima_clothing_selector"
+CACHE_NAMESPACE_BACKGROUND = "anima_background_selector"
+```
 
 ---
 
-## 二、前端 — anima_artist_selector.js
+## 三、前端 — JS 选择器
 
-### 2.1 新增状态变量
+3 个选择器（artist、character、clothing）各自包含：
+
+1. **Cache 开关按钮** → 工具栏上的 "Cache: ON/OFF" 按钮
+2. **`getCacheProxyUrl(url)`** → 构造带 namespace 的代理 URL
+3. **`onerror` 回退** → CDN 加载失败时自动 fallback 到缓存代理
+
+### URL 示例
 
 ```javascript
-const CACHE_STORAGE_KEY = "anima-selector-use-cache";
-let cacheMode = localStorage.getItem(CACHE_STORAGE_KEY) === "true";
+// 画师选择器 (anima_artist_selector.js)
+/anima-tools/cached-image?namespace=anima_artist_selector&url=https://cdn.example.com/img.webp
+
+// 角色选择器 (anima_character_selector.js)
+/anima-tools/cached-image?namespace=anima_character_selector&url=https://cdn.example.com/char.webp
+
+// 服装选择器 (anima_clothing_selector.js)
+/anima-tools/cached-image?namespace=anima_clothing_selector&url=https://cdn.example.com/cloth.webp
 ```
 
-### 2.2 新增辅助函数
+### 图片加载逻辑
 
-```javascript
-// 根据缓存模式返回 CDN 直连 URL 或本地缓存代理 URL
-function getImageUrl(partition, id) {
-    const cdnUrl = getImgUrl(partition, id);
-    if (cacheMode) {
-        return `/anima-tools/cached-image?url=${encodeURIComponent(cdnUrl)}`;
-    }
-    return cdnUrl;
-}
-
-// 构造缓存代理 URL (供 onerror 回退使用)
-function getCacheProxyUrl(cdnUrl) {
-    return `/anima-tools/cached-image?url=${encodeURIComponent(cdnUrl)}`;
-}
-```
-
-### 2.3 工具栏新增按钮
-
-在 CDN 选择器右侧添加 **"Cache: ON/OFF"** 切换按钮：
-
-- **OFF 状态**：默认样式（灰色）
-- **ON 状态**：绿色高亮（`rgba(34, 197, 94, ...)`）
-- 点击切换 → 更新 `localStorage` → 重新渲染当前页
-- 图标使用 SVG 盒子图标（database/package）
-
-### 2.4 图片加载逻辑改动
-
-**原来**：
-```javascript
-img.src = getImgUrl(partition, item.id);
-img.onerror = () => { /* 显示占位符 */ };
-```
-
-**现在**：
 ```javascript
 const originalSrc = getImgUrl(partition, item.id);
 img.src = cacheMode ? getCacheProxyUrl(originalSrc) : originalSrc;
-img.dataset.cacheTried = "0";
 
 img.onerror = () => {
-    // 如果不是缓存模式且还没尝试过缓存 → 回退到本地缓存
     if (!img.dataset.cacheTried && !cacheMode) {
         img.dataset.cacheTried = "1";
-        img.src = getCacheProxyUrl(originalSrc);
-        return;  // 保留 loader，等待缓存结果
+        img.src = getCacheProxyUrl(originalSrc);  // 回退到缓存
+        return;
     }
-    // 缓存也无 → 显示占位符
-    img.style.display = "none";
+    img.style.display = "none";  // 彻底失败 → 占位符
     loader?.remove();
     placeholder.style.opacity = "1";
 };
-```
-
-关键点：
-- `originalSrc` 保存原始 CDN URL，供 onerror 回退使用
-- `dataset.cacheTried` 防止无限循环（缓存失败后不再重试）
-- 缓存模式下图片直接走代理，不触发 onerror 回退逻辑
-
----
-
-## 三、前端 — anima_character_selector.js
-
-改动与画师选择器完全一致，此外修复了一个已有 bug：
-
-### Bug 修复
-
-```diff
--    filterControls.appendChild(sortSelect);   // 第一次
--    filterControls.appendChild(sortSelect);   // 重复！（Bug）
-+    filterControls.appendChild(sortSelect);   // 仅一次
 ```
 
 ---
@@ -189,16 +178,15 @@ img.onerror = () => {
 
 ### 准备离线环境
 
-1. 在画师选择器或角色选择器面板的工具栏中，点击 📦 按钮切换到 **Cache: ON**
-2. 浏览一遍需要的画师/角色（图片会下载并存入 `temp/`）
-3. 之后即使断网，切换到 Cache: ON 即可从本地加载所有已缓存的图片
-4. 也可随时切回 Cache: OFF 从 CDN 加载新内容
+1. 在任一选择器工具栏中，点击 📦 按钮切换到 **Cache: ON**
+2. 浏览一遍需要的图片（会下载并存入 `temp/<namespace>/`）
+3. 之后即使断网，切换到 Cache: ON 即可从本地加载所有已缓存图片
 
 ### 缓存管理
 
-- 缓存位置：`Comfyui-Anima-Tools/temp/`
-- 可通过 API 查看统计：`GET /anima-tools/cache-stats`
-- 可通过 API 清空缓存：`POST /anima-tools/clear-cache`
+- 缓存位置：`Comfyui-Anima-Tools/temp/<namespace>/`
+- 查看统计：`GET /anima-tools/cache-stats?namespace=<name>`
+- 清空缓存：`POST /anima-tools/clear-cache` + `{"namespace": "<name>"}`
 - 缓存永久保存，不会自动过期，需手动清理
 
 ### 缓存模式对比
@@ -215,53 +203,54 @@ img.onerror = () => {
 ## 五、架构图
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                     ComfyUI 前端 (JS)                     │
-│                                                         │
-│  ┌──────────────────┐    ┌──────────────────┐           │
-│  │ Artist Selector  │    │Character Selector│           │
-│  │                  │    │                  │           │
-│  │ getImageUrl() ───┼────┼── 根据 cacheMode │           │
-│  │                  │    │  选择 URL 策略    │           │
-│  │ onerror ─────────┼────┼── getCacheProxy  │           │
-│  │                  │    │  Url() 回退      │           │
-│  └────────┬─────────┘    └────────┬─────────┘           │
-│           │                       │                     │
-│           └───────────┬───────────┘                     │
-│                       ▼                                 │
-│     /anima-tools/cached-image?url=...                   │
-└───────────────────────┬─────────────────────────────────┘
-                        │ HTTP GET
-┌───────────────────────▼─────────────────────────────────┐
-│                   ComfyUI 后端 (Python)                   │
-│                                                         │
-│  ┌─────────────────────────────────────────────────┐    │
-│  │          get_cached_image(request)               │    │
-│  │                                                  │    │
-│  │  1. 白名单域名校验 (SSRF 防护)                    │    │
-│  │  2. 查 temp/ 缓存 → HIT? → FileResponse          │    │
-│  │  3. MISS → aiohttp 下载 → 原子写入 → Response     │    │
-│  └──────────────────────┬──────────────────────────┘    │
-│                         │                               │
-│                         ▼                               │
-│  ┌─────────────────────────────────────────────────┐    │
-│  │  Comfyui-Anima-Tools/temp/                       │    │
-│  │  ├── a1b2c3d4e5...webp  (MD5 hash)              │    │
-│  │  ├── f6g7h8i9j0...png                           │    │
-│  │  └── ...                                         │    │
-│  └─────────────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                     ComfyUI 前端 (JS)                         │
+│                                                             │
+│  ┌──────────────┐  ┌───────────────┐  ┌──────────────┐     │
+│  │Artist        │  │Character      │  │Clothing      │     │
+│  │getCacheProxy │  │getCacheProxy  │  │getCacheProxy │     │
+│  │Url() ────────┼──┼──Url() ───────┼──┼──Url()       │     │
+│  │onerror ──────┼──┼──onerror      │  │onerror       │     │
+│  │ns=artist_ ◄──┼──┼──ns=character_│  │ns=clothing_  │     │
+│  │  selector    │  │  selector     │  │  selector    │     │
+│  └──────┬───────┘  └──────┬────────┘  └──────┬───────┘     │
+│         │                 │                  │              │
+│         └────────────┬────┴──────────┬───────┘              │
+│                      ▼               ▼                      │
+│    /anima-tools/cached-image?namespace=...&url=...           │
+└──────────────────────────┬──────────────────────────────────┘
+                           │ HTTP GET
+┌──────────────────────────▼──────────────────────────────────┐
+│                ComfyUI 后端 (Python)                          │
+│                                                             │
+│  nodes.py (thin wrapper)                                    │
+│  ┌─────────────────────────────────────────────────┐        │
+│  │  1. get_cache(namespace) ← 获取对应缓存实例       │        │
+│  │  2. is_allowed_url(url)     ← SSRF 防护          │        │
+│  │  3. get_path(url) → HIT     ← 直接 FileResponse  │        │
+│  │  4. fetch_and_cache(url)    ← MISS → 下载 + 缓存 │        │
+│  └─────────────────────┬───────────────────────────┘        │
+│                        │                                     │
+│  anima_cache.py        ▼                                     │
+│  ┌─────────────────────────────────────────────────┐        │
+│  │  ImageCache(namespace)                           │        │
+│  │  ├─ temp/anima_artist_selector/  (artist)        │        │
+│  │  ├─ temp/anima_character_selector/ (character)   │        │
+│  │  └─ temp/anima_clothing_selector/  (clothing)   │        │
+│  └─────────────────────────────────────────────────┘        │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
 ## 六、注意事项
 
-1. **缓存不自动过期**：需手动调用 `/anima-tools/clear-cache` 或手动删除 `temp/` 目录
+1. **缓存不自动过期**：需手动调用 API 或删除 `temp/` 目录
 2. **首次加载较慢**：Cache ON 模式下，首次访问的图片需经后端下载，比 CDN 直连慢
-3. **域名白名单**：如需添加新的图片源，编辑 `nodes.py` 中的 `ALLOWED_CACHE_DOMAINS` 列表
+3. **域名白名单**：如需添加新的图片源，编辑 `anima_cache.py` 中的 `DEFAULT_ALLOWED_DOMAINS`
 4. **磁盘空间**：每张图片约 10-50KB，缓存 1000 张约占用 10-50MB
 5. **跨会话持久化**：缓存文件和 `localStorage` 中的 Cache 模式设置均跨 ComfyUI 重启保留
+6. **新增选择器**：只需调用 `get_cache("your_namespace")` 即可使用缓存，无需重复实现
 
 ---
 

@@ -883,7 +883,7 @@ async function openClothingSelectorModal(node, tagsWidget) {
 
     // 根据缓存模式返回原始预览 URL 或本地缓存代理 URL
     function getCacheProxyUrl(previewUrl) {
-        return `/anima-tools/cached-image?url=${encodeURIComponent(previewUrl)}`;
+        return `/anima-tools/cached-image?namespace=anima_clothing_selector&url=${encodeURIComponent(previewUrl)}`;
     }
 
     const toolbar = createEl("div");
