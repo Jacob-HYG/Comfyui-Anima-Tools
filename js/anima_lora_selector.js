@@ -26,25 +26,20 @@ app.registerExtension({
             nodeType.prototype.onConfigure = function (info) {
                 // Pre-configure: Extract and restore the dynamic widgets structure before LiteGraph reads values
                 if (info && info.widgets_values) {
-                    let savedLoraData = [];
                     for (const val of info.widgets_values) {
-                        if (typeof val === "string" && val.startsWith("[")) {
-                            try {
-                                const parsed = JSON.parse(val);
-                                if (Array.isArray(parsed)) {
-                                    savedLoraData = parsed;
-                                    break;
-                                }
-                            } catch (e) {}
+                        const parsedLoraData = parseLoraJsonValue(val);
+                        if (parsedLoraData) {
+                            syncLoraWidgets(this, parsedLoraData);
+                            break;
                         }
-                    }
-                    if (savedLoraData.length > 0) {
-                        this._loraData = savedLoraData;
-                        syncLoraWidgets(this, savedLoraData);
                     }
                 }
 
                 origOnConfigure?.apply(this, arguments);
+                const jsonLoraData = getJsonWidgetLoraData(this);
+                if (jsonLoraData) {
+                    syncLoraWidgets(this, jsonLoraData);
+                }
                 hideJsonWidgetFully(this);
             };
 
@@ -144,6 +139,21 @@ function normalizeLoraEntry(lora) {
 
 function normalizeLoraList(loras) {
     return (Array.isArray(loras) ? loras : []).map(normalizeLoraEntry).filter(Boolean);
+}
+
+function parseLoraJsonValue(value) {
+    if (typeof value !== "string" || !value.trim().startsWith("[")) return null;
+    try {
+        const parsed = JSON.parse(value);
+        return Array.isArray(parsed) ? normalizeLoraList(parsed) : null;
+    } catch (_) {
+        return null;
+    }
+}
+
+function getJsonWidgetLoraData(node) {
+    const jsonWidget = node.widgets?.find(w => w.name === "lora_list_json");
+    return parseLoraJsonValue(jsonWidget?.value);
 }
 
 function getLoraBaseName(name) {
@@ -250,6 +260,7 @@ function syncLoraWidgets(node, loras) {
             });
             delBtn.__animaWidgetType = "delete_lora";
             delBtn.__animaLoraName = lora.name;
+            delBtn.serialize = false;
             delBtn.computedHeight = 24;
             if (delBtn.el) {
                 delBtn.el.style.cssText += `
@@ -272,10 +283,22 @@ function syncLoraWidgets(node, loras) {
             const modelWidgetName = "   Strength" + "\u200B".repeat(i);
 
             const modelSlider = node.addWidget("slider", modelWidgetName, lora.strength_model ?? 1.0, (val) => {
-                lora.strength_model = parseFloat(parseFloat(val).toFixed(2));
+                const nextValue = Number.parseFloat(val);
+                if (!Number.isFinite(nextValue)) return;
+                const roundedValue = Number(nextValue.toFixed(2));
+                const currentLora = node._loraData.find(item => item.name === lora.name);
+                if (currentLora) {
+                    currentLora.strength_model = roundedValue;
+                } else {
+                    lora.strength_model = roundedValue;
+                }
+                modelSlider.value = roundedValue;
                 updateJsonValue(node);
-            }, { min: -2.0, max: 2.0, step: 0.1, precision: 2 });
+                node.setDirtyCanvas?.(true, true);
+            }, { min: -4.0, max: 4.0, step: 0.1, precision: 2 });
             modelSlider.__animaWidgetType = "model_strength";
+            modelSlider.__animaLoraName = lora.name;
+            modelSlider.serialize = false;
             modelSlider.computedHeight = 18;
             node._dynamicWidgets.push(modelSlider);
         }
@@ -284,6 +307,9 @@ function syncLoraWidgets(node, loras) {
         const btnWidget = node.addWidget("button", t("Open LoRA Selector"), null, async () => {
             await openLoraSelectorModal(node);
         });
+        if (btnWidget) {
+            btnWidget.serialize = false;
+        }
         
         // Style the button (matching artist selector blue sci-fi aesthetics)
         if (btnWidget && btnWidget.el) {
@@ -528,9 +554,51 @@ function getOptimizedImageUrl(url, targetWidth = LORA_CARD_PREVIEW_WIDTH) {
     return url;
 }
 
+function isRemoteHttpUrl(url) {
+    return /^https?:\/\//i.test(String(url || ""));
+}
+
+function getRemotePreviewUrl(url, targetWidth = LORA_CARD_PREVIEW_WIDTH) {
+    if (!url) return "";
+    if (!isRemoteHttpUrl(url)) return url;
+
+    const sourceUrl = getOptimizedImageUrl(url, targetWidth);
+    const imageId = extractCivitaiImageId(url) || extractCivitaiImageId(sourceUrl);
+    const params = new URLSearchParams({
+        url: sourceUrl,
+        width: String(targetWidth),
+        miss: "error"
+    });
+    if (imageId) {
+        params.set("image_id", imageId);
+    }
+    return `/anima-tools/lora/remote-preview?${params.toString()}`;
+}
+
+function isRemotePreviewProxyUrl(url) {
+    return String(url || "").includes("/anima-tools/lora/remote-preview");
+}
+
+function withPreviewRetryBust(url) {
+    return `${url}${url.includes("?") ? "&" : "?"}retry=${Date.now()}`;
+}
+
+function retryRemotePreviewLoad(element, previewUrl, maxRetries = 7) {
+    if (!isRemotePreviewProxyUrl(previewUrl)) return false;
+    const retryCount = parseInt(element.dataset.remoteRetryCount || "0", 10);
+    if (retryCount >= maxRetries) return false;
+    element.dataset.remoteRetryCount = String(retryCount + 1);
+    const delay = [600, 1200, 2200, 3600, 5400, 7600, 10000][retryCount] || 10000;
+    setTimeout(() => {
+        if (!element.isConnected) return;
+        element.src = withPreviewRetryBust(previewUrl);
+    }, delay);
+    return true;
+}
+
 function getPreviewImageUrl(image, targetWidth = LORA_CARD_PREVIEW_WIDTH) {
     if (!image) return "";
-    return getOptimizedImageUrl(image.thumbnailUrl || image.url || "", targetWidth);
+    return getRemotePreviewUrl(image.thumbnailUrl || image.url || "", targetWidth);
 }
 
 function getSkeletonHtml(count = 40) {
@@ -579,6 +647,8 @@ async function openLoraSelectorModal(node) {
     let currentSort = "models_v9"; // Matches Civitai search sortBy values.
     let selectedModel = null; // Currently clicked model for previewing details
     let selectedVersion = null; // Selected version of the clicked model
+    let selectedPreviewIndex = 0;
+    let selectedPreviewUrl = "";
     let previewRenderGeneration = 0;
     let loraManifestSignature = "";
     let searchDebounceTimer = null;
@@ -626,6 +696,11 @@ async function openLoraSelectorModal(node) {
         ];
         const found = candidates.find(value => typeof value === "string" && value.trim());
         return found ? found.trim() : "";
+    }
+
+    function resetSelectedPreviewState() {
+        selectedPreviewIndex = 0;
+        selectedPreviewUrl = "";
     }
 
     function showCopyFeedback(message) {
@@ -1201,8 +1276,10 @@ async function openLoraSelectorModal(node) {
             background: rgba(0, 0, 0, 0.3);
             padding: 12px 14px;
             border-radius: 8px;
-            flex: 1;
-            max-height: 260px;
+            flex: 1 1 150px;
+            min-height: 140px;
+            max-height: none;
+            box-sizing: border-box;
             border: 1px solid rgba(255, 255, 255, 0.04);
             box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4);
         }
@@ -1273,12 +1350,13 @@ async function openLoraSelectorModal(node) {
         }
         .anima-lora-detail-preview-main {
             width: 100%;
-            aspect-ratio: 2 / 3;
+            height: clamp(150px, 36vh, 420px);
+            min-height: 140px;
             border-radius: 10px;
             background: #08080a;
             overflow: hidden;
             position: relative;
-            flex-shrink: 0;
+            flex: 0 1 auto;
         }
         .anima-lora-preview-bg {
             position: absolute;
@@ -1385,6 +1463,32 @@ async function openLoraSelectorModal(node) {
         @keyframes animaSpin {
             0% { transform: translate(-50%, -50%) rotate(0deg); }
             100% { transform: translate(-50%, -50%) rotate(360deg); }
+        }
+        @media (max-height: 720px) {
+            #anima-lora-container {
+                height: 96vh !important;
+            }
+            #anima-lora-detail-panel {
+                padding: 12px !important;
+                gap: 9px !important;
+            }
+            .anima-lora-detail-preview-main {
+                height: clamp(120px, 30vh, 240px);
+                min-height: 120px;
+            }
+            .anima-lora-desc {
+                min-height: 150px;
+                padding: 10px 12px;
+            }
+        }
+        @media (max-height: 560px) {
+            .anima-lora-detail-preview-main {
+                height: clamp(96px, 24vh, 145px);
+                min-height: 96px;
+            }
+            .anima-lora-desc {
+                min-height: 160px;
+            }
         }
     `;
     document.head.appendChild(styleSheet);
@@ -1591,6 +1695,7 @@ async function openLoraSelectorModal(node) {
     const modalBody = document.createElement("div");
     modalBody.style.cssText = `
         flex: 1;
+        min-height: 0;
         display: flex;
         overflow: hidden;
         width: 100%;
@@ -1769,12 +1874,14 @@ async function openLoraSelectorModal(node) {
     detailPanel.id = "anima-lora-detail-panel";
     detailPanel.style.cssText = `
         width: 340px;
+        box-sizing: border-box;
         background: #1a1a1c;
         border-left: 1px solid rgba(255, 255, 255, 0.06);
         display: flex;
         flex-direction: column;
         padding: 20px;
         gap: 14px;
+        min-height: 0;
         overflow-y: auto;
         scrollbar-gutter: stable;
         flex-shrink: 0;
@@ -1855,6 +1962,7 @@ async function openLoraSelectorModal(node) {
     function restorePreviousPage() {
         if (isSearching || pageHistory.length === 0) return;
         const previous = pageHistory.pop();
+        resetSelectedPreviewState();
         selectedModel = null;
         selectedVersion = null;
         renderDetailEmptyState();
@@ -1952,6 +2060,7 @@ async function openLoraSelectorModal(node) {
         updatePaginationButtons();
         
         // Clear selected state
+        resetSelectedPreviewState();
         selectedModel = null;
         selectedVersion = null;
         renderDetailEmptyState();
@@ -2081,7 +2190,7 @@ async function openLoraSelectorModal(node) {
                 previewUrl = getLocalPreviewUrl(localPath, LORA_LOCAL_CARD_PREVIEW_WIDTH);
                 const localManifest = getManifestItem(localPath);
                 if (localManifest && !localManifest.has_preview && localManifest.meta_summary?.preview_url) {
-                    previewUrl = getOptimizedImageUrl(localManifest.meta_summary.preview_url, LORA_CARD_PREVIEW_WIDTH);
+                    previewUrl = getRemotePreviewUrl(localManifest.meta_summary.preview_url, LORA_CARD_PREVIEW_WIDTH);
                 }
             } else {
                 const images = firstVersion.images || [];
@@ -2137,21 +2246,13 @@ async function openLoraSelectorModal(node) {
                     mediaElement.src = previewUrl;
                     mediaElement.style.opacity = "1";
                 } else {
-                    const isRemoteProxy = previewUrl.includes("/anima-tools/lora/remote-preview");
                     mediaElement.onload = () => {
                         mediaElement.style.opacity = "1";
                         loader?.remove();
-                        const retryCount = parseInt(mediaElement.dataset.remoteRetryCount || "0", 10);
-                        if (isRemoteProxy && retryCount < 2) {
-                            mediaElement.dataset.remoteRetryCount = String(retryCount + 1);
-                            setTimeout(() => {
-                                mediaElement.src = `${previewUrl}${previewUrl.includes("?") ? "&" : "?"}retry=${Date.now()}`;
-                            }, retryCount === 0 ? 1200 : 2600);
-                        } else {
-                            markImageLoaded(previewUrl);
-                        }
+                        markImageLoaded(previewUrl);
                     };
                     mediaElement.onerror = () => {
+                        if (retryRemotePreviewLoad(mediaElement, previewUrl)) return;
                         mediaElement.style.display = "none";
                         loader?.remove();
                         const fallback = document.createElement("img");
@@ -2274,6 +2375,7 @@ async function openLoraSelectorModal(node) {
                 allCards.forEach(c => c.classList.remove("selected"));
                 card.classList.add("selected");
                 
+                resetSelectedPreviewState();
                 selectedModel = model;
                 selectedVersion = firstVersion;
                 renderModelDetail();
@@ -2344,10 +2446,11 @@ async function openLoraSelectorModal(node) {
                 let localPreviewUrl = getLocalPreviewUrl(localPath, LORA_DETAIL_PREVIEW_WIDTH);
                 const localManifest = getManifestItem(localPath);
                 if (localManifest && !localManifest.has_preview && localManifest.meta_summary?.preview_url) {
-                    localPreviewUrl = getOptimizedImageUrl(localManifest.meta_summary.preview_url, LORA_DETAIL_PREVIEW_WIDTH);
+                    localPreviewUrl = getRemotePreviewUrl(localManifest.meta_summary.preview_url, LORA_DETAIL_PREVIEW_WIDTH);
                 }
                 return localPreviewUrl ? [{
                     url: localPreviewUrl,
+                    sourceUrl: localManifest?.meta_summary?.preview_url || localPreviewUrl,
                     thumbUrl: localPreviewUrl,
                     isVideo: false
                 }] : [];
@@ -2366,6 +2469,7 @@ async function openLoraSelectorModal(node) {
                     const isVideo = isVideoPreview(image, rawUrl);
                     return {
                         url: isVideo ? rawUrl : getPreviewImageUrl(image, LORA_DETAIL_PREVIEW_WIDTH),
+                        sourceUrl: rawUrl,
                         thumbUrl: isVideo ? rawUrl : getPreviewImageUrl(image, 160),
                         isVideo
                     };
@@ -2374,9 +2478,20 @@ async function openLoraSelectorModal(node) {
         };
 
         const previewItems = getPreviewItems();
-        let currentPreviewIndex = 0;
+        let currentPreviewIndex = previewItems.length > 0
+            ? Math.min(Math.max(selectedPreviewIndex, 0), previewItems.length - 1)
+            : 0;
+        if (selectedPreviewUrl) {
+            const preservedPreviewIndex = previewItems.findIndex(item => item.url === selectedPreviewUrl);
+            if (preservedPreviewIndex !== -1) {
+                currentPreviewIndex = preservedPreviewIndex;
+            }
+        }
+        let detailPreviewGeneration = 0;
 
         function renderMainPreview(index) {
+            const renderGeneration = ++detailPreviewGeneration;
+            const isCurrentPreviewRender = () => renderGeneration === detailPreviewGeneration;
             if (previewItems.length > 0) {
                 currentPreviewIndex = (index + previewItems.length) % previewItems.length;
             } else {
@@ -2385,6 +2500,8 @@ async function openLoraSelectorModal(node) {
             imgContainer.innerHTML = "";
 
             const item = previewItems[currentPreviewIndex] || { url: noPreviewSvg, isVideo: false };
+            selectedPreviewIndex = currentPreviewIndex;
+            selectedPreviewUrl = item.url || "";
             addBlurredPreviewBackground(item);
             const mediaElement = item.isVideo ? document.createElement("video") : document.createElement("img");
             mediaElement.style.cssText = "width: 100%; height: 100%; object-fit: contain; background: transparent; cursor: zoom-in; opacity: 0; transition: opacity 0.22s cubic-bezier(0.4, 0, 0.2, 1); position: relative; z-index: 2;";
@@ -2398,7 +2515,7 @@ async function openLoraSelectorModal(node) {
             }
 
             if (item.url && item.url !== noPreviewSvg) {
-                mediaElement.onclick = () => window.open(item.url, "_blank");
+                mediaElement.onclick = () => window.open(item.sourceUrl || item.url, "_blank");
             }
 
             let loader = null;
@@ -2417,10 +2534,12 @@ async function openLoraSelectorModal(node) {
             } else if (item.isVideo) {
                 showLoader();
                 mediaElement.onloadeddata = () => {
+                    if (!isCurrentPreviewRender()) return;
                     mediaElement.style.opacity = "1";
                     loader?.remove();
                 };
                 mediaElement.onerror = () => {
+                    if (!isCurrentPreviewRender()) return;
                     mediaElement.remove();
                     loader?.remove();
                     imgContainer.appendChild(createFallbackPreview());
@@ -2433,11 +2552,14 @@ async function openLoraSelectorModal(node) {
                     showLoader();
                 }
                 mediaElement.onload = () => {
+                    if (!isCurrentPreviewRender()) return;
                     mediaElement.style.opacity = "1";
                     loader?.remove();
                     markImageLoaded(item.url);
                 };
                 mediaElement.onerror = () => {
+                    if (!isCurrentPreviewRender()) return;
+                    if (retryRemotePreviewLoad(mediaElement, item.url)) return;
                     mediaElement.remove();
                     loader?.remove();
                     if (!isCivitaiModel) {
@@ -2448,11 +2570,13 @@ async function openLoraSelectorModal(node) {
                         video.playsInline = true;
                         video.autoplay = true;
                         video.controls = false;
-                        video.onclick = () => window.open(item.url, "_blank");
+                        video.onclick = () => window.open(item.sourceUrl || item.url, "_blank");
                         video.onloadeddata = () => {
+                            if (!isCurrentPreviewRender()) return;
                             video.style.opacity = "1";
                         };
                         video.onerror = () => {
+                            if (!isCurrentPreviewRender()) return;
                             video.remove();
                             imgContainer.appendChild(createFallbackPreview());
                         };
@@ -2484,7 +2608,7 @@ async function openLoraSelectorModal(node) {
             }
         }
 
-        renderMainPreview(0);
+        renderMainPreview(currentPreviewIndex);
 
         // 2. Info Row
         const titleRow = document.createElement("div");
@@ -2558,6 +2682,7 @@ async function openLoraSelectorModal(node) {
             const vId = verSelect.value;
             const match = versions.find(v => String(v.id) === String(vId));
             if (match) {
+                resetSelectedPreviewState();
                 selectedVersion = match;
                 renderModelDetail();
             }
@@ -2634,7 +2759,7 @@ async function openLoraSelectorModal(node) {
 
         if (triggers.length > 0) {
             const listDiv = document.createElement("div");
-            listDiv.style.cssText = "max-height: 80px; overflow-y: auto; border: 1px solid rgba(255,255,255,0.03); padding: 4px; border-radius: 6px;";
+            listDiv.style.cssText = "max-height: clamp(44px, 10vh, 80px); overflow-y: auto; border: 1px solid rgba(255,255,255,0.03); padding: 4px; border-radius: 6px;";
             triggers.forEach(word => {
                 const tag = document.createElement("span");
                 tag.className = "anima-lora-tag";
@@ -2657,7 +2782,7 @@ async function openLoraSelectorModal(node) {
 
         // 6. Model Description (Rich Text Description)
         const descContainer = document.createElement("div");
-        descContainer.style.cssText = "display: flex; flex-direction: column; gap: 6px; flex: 1; min-height: 0;";
+        descContainer.style.cssText = "display: flex; flex-direction: column; gap: 6px; flex: 1 0 170px; min-height: 160px;";
         
         const descLabel = document.createElement("div");
         descLabel.innerText = "Description / 模型介绍:";
@@ -2686,6 +2811,7 @@ async function openLoraSelectorModal(node) {
     }
 
     function renderDetailEmptyState() {
+        resetSelectedPreviewState();
         detailPanel.innerHTML = `
             <div style="height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #555; text-align: center; gap: 10px; padding: 20px;">
                 <div style="font-size: 40px;">🔍</div>
@@ -2774,7 +2900,7 @@ async function openLoraSelectorModal(node) {
             let loader = null;
             let previewUrl = getLocalPreviewUrl(filename, LORA_LOCAL_CARD_PREVIEW_WIDTH);
             if (manifestItem && !manifestItem.has_preview && manifestItem.meta_summary?.preview_url) {
-                previewUrl = getOptimizedImageUrl(manifestItem.meta_summary.preview_url, LORA_CARD_PREVIEW_WIDTH);
+                previewUrl = getRemotePreviewUrl(manifestItem.meta_summary.preview_url, LORA_CARD_PREVIEW_WIDTH);
             }
             
             const previewAlreadyLoaded = isImageLoaded(previewUrl);
@@ -2789,6 +2915,7 @@ async function openLoraSelectorModal(node) {
                 markImageLoaded(previewUrl);
             };
             img.onerror = () => {
+                if (retryRemotePreviewLoad(img, previewUrl)) return;
                 img.remove();
                 
                 const video = document.createElement("video");
@@ -2913,6 +3040,7 @@ async function openLoraSelectorModal(node) {
                             }
                         }
                         if (isCurrentSelectedDeleted) {
+                            resetSelectedPreviewState();
                             selectedModel = null;
                             selectedVersion = null;
                             renderDetailEmptyState();
@@ -3007,6 +3135,7 @@ async function openLoraSelectorModal(node) {
                 card.classList.add("selected");
 
                 // Pre-fill with a mock model version in case fetch fails or meta is absent
+                resetSelectedPreviewState();
                 selectedModel = {
                     id: filename,
                     name: manifestItem?.meta_summary?.name || displayName,
@@ -3027,6 +3156,9 @@ async function openLoraSelectorModal(node) {
                     if (resp.ok) {
                         const resData = await resp.json();
                         if (resData.success && resData.metadata) {
+                            if (!selectedModel || (selectedModel.id !== filename && selectedModel.local_filename !== filename)) {
+                                return;
+                            }
                             selectedModel = resData.metadata.model;
                             selectedVersion = resData.metadata.version;
                             selectedModel.local_filename = filename;
@@ -3101,7 +3233,7 @@ async function openLoraSelectorModal(node) {
             let loader = null;
             let previewUrl = getLocalPreviewUrl(filename, LORA_LOCAL_CARD_PREVIEW_WIDTH);
             if (manifestItem && !manifestItem.has_preview && manifestItem.meta_summary?.preview_url) {
-                previewUrl = getOptimizedImageUrl(manifestItem.meta_summary.preview_url, LORA_CARD_PREVIEW_WIDTH);
+                previewUrl = getRemotePreviewUrl(manifestItem.meta_summary.preview_url, LORA_CARD_PREVIEW_WIDTH);
             }
 
             const previewAlreadyLoaded = isImageLoaded(previewUrl);
@@ -3116,6 +3248,7 @@ async function openLoraSelectorModal(node) {
                 markImageLoaded(previewUrl);
             };
             img.onerror = () => {
+                if (retryRemotePreviewLoad(img, previewUrl)) return;
                 img.remove();
                 loader?.remove();
                 const fallback = document.createElement("div");
@@ -3180,6 +3313,7 @@ async function openLoraSelectorModal(node) {
                 updateJsonValue(node);
                 syncLoraWidgets(node, node._loraData);
                 if (selectedModel && (selectedModel.id === filename || selectedModel.local_filename === filename)) {
+                    resetSelectedPreviewState();
                     selectedModel = null;
                     selectedVersion = null;
                     renderDetailEmptyState();
@@ -3242,6 +3376,7 @@ async function openLoraSelectorModal(node) {
                 allCards.forEach(c => c.classList.remove("selected"));
                 card.classList.add("selected");
 
+                resetSelectedPreviewState();
                 selectedModel = {
                     id: filename,
                     name: metaSummary.name || getLoraBaseName(filename),
@@ -3264,6 +3399,9 @@ async function openLoraSelectorModal(node) {
                     if (resp.ok) {
                         const resData = await resp.json();
                         if (resData.success && resData.metadata) {
+                            if (!selectedModel || (selectedModel.id !== filename && selectedModel.local_filename !== filename)) {
+                                return;
+                            }
                             selectedModel = resData.metadata.model;
                             selectedVersion = resData.metadata.version;
                             selectedModel.local_filename = filename;
