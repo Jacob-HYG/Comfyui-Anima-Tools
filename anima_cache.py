@@ -22,6 +22,7 @@ import aiohttp
 # Default CDN domain whitelist (SSRF protection)
 DEFAULT_ALLOWED_DOMAINS = [
     "fastly.jsdelivr.net",
+    "cdn.jsdelivr.net",
     "raw.githubusercontent.com",
     "cdn.statically.io",
     "blobs.animadex.net",

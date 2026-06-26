@@ -189,6 +189,11 @@ function copyText(text, callback) {
     }
 }
 
+// 构造缓存代理 URL (供图片加载使用)
+function getCacheProxyUrl(previewUrl) {
+    return `/anima-tools/cached-image?namespace=anima_background_selector&url=${encodeURIComponent(previewUrl)}`;
+}
+
 async function openBackgroundSelectorModal(node, tagsWidget) {
     const backgroundData = Array.isArray(window.backgroundData) ? window.backgroundData : [];
     const dataById = new Map(backgroundData.map(item => [String(item.id), item]));
@@ -247,6 +252,7 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
     const DISPLAY_LANG_STORAGE_KEY = "anima-background-selector-display-lang";
     const FILTER_STORAGE_KEY = "anima-background-selector-filters";
     const COLLECTIONS_COLLAPSE_STORAGE_KEY = "anima-background-selector-collections-collapsed";
+    const CACHE_STORAGE_KEY = "anima-background-selector-use-cache";
 
     let activeSort = localStorage.getItem(SORT_STORAGE_KEY) || "id-asc";
     let displayLang = localStorage.getItem(DISPLAY_LANG_STORAGE_KEY) || "bilingual";
@@ -257,6 +263,7 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
     let lastScrollTop = parseInt(localStorage.getItem(SCROLL_STORAGE_KEY), 10) || 0;
     let lastSidebarScrollTop = parseInt(localStorage.getItem(SIDEBAR_SCROLL_STORAGE_KEY), 10) || 0;
     let collectionsCollapsed = localStorage.getItem(COLLECTIONS_COLLAPSE_STORAGE_KEY) === "true";
+    let cacheMode = localStorage.getItem(CACHE_STORAGE_KEY) === "true";
 
     const activeFilters = {
         categories: new Set(),
@@ -1023,6 +1030,32 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
     filterControls.appendChild(sortSelect);
     filterControls.appendChild(langSelect);
 
+    // 缓存模式切换按钮 (本地持久化图片缓存)
+    const cacheToggleBtn = createEl("button", "anima-background-btn");
+    cacheToggleBtn.innerHTML = cacheMode ? t("Cache: ON") : t("Cache: OFF");
+    cacheToggleBtn.title = t("Toggle local image cache mode");
+    if (cacheMode) {
+        cacheToggleBtn.style.background = "rgba(34, 197, 94, 0.15)";
+        cacheToggleBtn.style.borderColor = "rgba(34, 197, 94, 0.4)";
+        cacheToggleBtn.style.color = "#4ade80";
+    }
+    cacheToggleBtn.onclick = () => {
+        cacheMode = !cacheMode;
+        localStorage.setItem(CACHE_STORAGE_KEY, cacheMode.toString());
+        cacheToggleBtn.innerText = cacheMode ? t("Cache: ON") : t("Cache: OFF");
+        if (cacheMode) {
+            cacheToggleBtn.style.background = "rgba(34, 197, 94, 0.15)";
+            cacheToggleBtn.style.borderColor = "rgba(34, 197, 94, 0.4)";
+            cacheToggleBtn.style.color = "#4ade80";
+        } else {
+            cacheToggleBtn.style.background = "";
+            cacheToggleBtn.style.borderColor = "";
+            cacheToggleBtn.style.color = "";
+        }
+        renderCurrentPage();
+    };
+    filterControls.appendChild(cacheToggleBtn);
+
     const actionControls = createEl("div");
     actionControls.style.cssText = "display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end;";
 
@@ -1620,8 +1653,9 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
             img.alt = item.name || "";
             img.loading = "lazy";
             img.decoding = "async";
-            const imgUrl = item.preview;
-            if (isImageLoaded(imgUrl)) {
+            const originalSrc = item.preview;
+            const imgUrl = cacheMode ? getCacheProxyUrl(originalSrc) : originalSrc;
+            if (isImageLoaded(originalSrc)) {
                 img.src = imgUrl;
                 img.style.opacity = "1";
             } else {
@@ -1635,9 +1669,15 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
                 img.style.opacity = "1";
                 placeholder.style.opacity = "0";
                 loader?.remove();
-                markImageLoaded(imgUrl);
+                markImageLoaded(originalSrc);
             };
             img.onerror = () => {
+                // 如果还没尝试过缓存代理，则回退到本地缓存
+                if (!img.dataset.cacheTried && !cacheMode) {
+                    img.dataset.cacheTried = "1";
+                    img.src = getCacheProxyUrl(originalSrc);
+                    return;
+                }
                 img.remove();
                 loader?.remove();
                 placeholder.style.opacity = "1";
