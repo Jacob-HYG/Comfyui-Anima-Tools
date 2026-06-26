@@ -780,7 +780,6 @@ NODE_DISPLAY_NAME_MAPPINGS = {
 import folder_paths
 from server import PromptServer
 from aiohttp import web
-import aiohttp
 import json
 import os
 import hashlib
@@ -2291,44 +2290,50 @@ async def get_cached_image(request):
     - HIT  → 直接返回缓存文件
     - MISS → 从 CDN 下载 → 原子写入 → 返回
     """
-    namespace = request.query.get("namespace", "default")
-    cache = get_cache(namespace)
-    url = request.query.get("url", "")
-    if not url:
-        return web.Response(status=400, text="Missing url parameter")
+    try:
+        namespace = request.query.get("namespace", "default")
+        cache = get_cache(namespace)
+        url = request.query.get("url", "")
+        if not url:
+            return web.Response(status=400, text="Missing url parameter")
 
-    if not cache.is_allowed_url(url):
-        print(f"[Anima Tools] Blocked cache request for unauthorized domain: {url}")
-        return web.Response(status=403, text="Domain not allowed")
+        if not cache.is_allowed_url(url):
+            print(f"[Anima Tools] Blocked cache request for unauthorized domain: {url}")
+            return web.Response(status=403, text="Domain not allowed")
 
-    cached_path = cache.get_path(url)
-    if cached_path:
-        return web.FileResponse(
-            cached_path,
-            headers={
-                "Content-Type": cache.get_content_type(url),
-                "X-Cache": "HIT",
-            },
-        )
+        cached_path = cache.get_path(url)
+        if cached_path:
+            return web.FileResponse(
+                cached_path,
+                headers={
+                    "Content-Type": cache.get_content_type(url),
+                    "X-Cache": "HIT",
+                },
+            )
 
-    data = await cache.fetch_and_cache(url)
-    if data is not None:
-        return web.Response(
-            body=data,
-            headers={
-                "Content-Type": cache.get_content_type(url),
-                "X-Cache": "MISS",
-            },
-        )
+        data = await cache.fetch_and_cache(url)
+        if data is not None:
+            return web.Response(
+                body=data,
+                headers={
+                    "Content-Type": cache.get_content_type(url),
+                    "X-Cache": "MISS",
+                },
+            )
 
-    return web.Response(status=404)
+        return web.Response(status=404)
+    except web.HTTPException:
+        raise
+    except Exception as e:
+        print(f"[Anima Tools] Cached image error: {e}")
+        return web.Response(status=500)
 
 
 @PromptServer.instance.routes.post("/anima-tools/clear-cache")
 async def clear_cache_api(request):
     """清除缓存。指定 namespace 则只清该文件夹，否则清所有。"""
     try:
-        body = await request.json() if request.can_read_body else {}
+        body = await request.json()
     except Exception:
         body = {}
     namespace = body.get("namespace") if isinstance(body, dict) else None
