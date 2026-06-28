@@ -245,9 +245,12 @@ async function openCharacterSelectorModal(node, tagsWidget) {
     const SIDEBAR_STORAGE_KEY = "anima-char-selector-active-sidebar-category";
     const SIDEBAR_SCROLL_STORAGE_KEY = "anima-char-selector-sidebar-scroll";
     const CACHE_STORAGE_KEY = "anima-char-selector-use-cache";
+    const CACHE_BUST_KEY = "anima-char-selector-cache-bust";
 
     let activeSort = localStorage.getItem(SORT_STORAGE_KEY) || "works-desc";
     let cacheMode = localStorage.getItem(CACHE_STORAGE_KEY) === "true";
+    // ★ 缓存版本计数器：每次开启 Cache 时递增，避免浏览器缓存旧 404
+    let cacheBustVersion = parseInt(localStorage.getItem(CACHE_BUST_KEY) || "0");
     
     // 多维联合分类过滤器对象，存储各个维度的当前选中值
     let activeFilters = {
@@ -1614,6 +1617,9 @@ async function openCharacterSelectorModal(node, tagsWidget) {
         cacheMode = !cacheMode;
         localStorage.setItem(CACHE_STORAGE_KEY, cacheMode.toString());
         if (cacheMode) {
+            // ★ 开启缓存时递增版本号，强制浏览器放弃缓存的 404
+            cacheBustVersion++;
+            localStorage.setItem(CACHE_BUST_KEY, cacheBustVersion.toString());
             cacheToggleBtn.innerHTML = `
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
@@ -1826,12 +1832,18 @@ async function openCharacterSelectorModal(node, tagsWidget) {
     gridArea.appendChild(listContainer);
 
     // 创建图片懒加载观察器（绑定到 list 滚动容器）
+    // v2 — 仅负责将 dataset.lazySrc 赋值到 src，不再重复赋值已设置的 src
     const charImageObserver = new IntersectionObserver((entries) => {
         entries.forEach(entry => {
             if (entry.isIntersecting) {
                 const el = entry.target;
-                if (el.dataset.lazySrc) {
+                // 仅在图片尚未开始加载（src 为空）时才设置 src
+                // 防止覆盖 cacheMode 下已经通过代理 URL 发起的加载
+                if (el.dataset.lazySrc && !el.src) {
                     el.src = el.dataset.lazySrc;
+                    delete el.dataset.lazySrc;
+                } else if (el.dataset.lazySrc && el.src) {
+                    // src 已存在（可能为代理 URL），清理 lazySrc 无需重复赋值
                     delete el.dataset.lazySrc;
                 }
                 charImageObserver.unobserve(el);
@@ -3112,42 +3124,92 @@ async function openCharacterSelectorModal(node, tagsWidget) {
                     transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
                 `;
                 img.loading = "lazy";
-                const imgUrl = getImgUrl(item.name, item.copyright);
-                const originalSrc = imgUrl;
-                img.src = cacheMode ? getCacheProxyUrl(originalSrc) : originalSrc;
-                
-                let loader = null;
-                if (isImageLoaded(imgUrl)) {
-                    // 缓存命中：直接显示，跳过 spinner
-                    img.src = imgUrl;
-                    img.style.opacity = "1";
-                } else {
-                    // 未缓存：懒加载
-                    img.dataset.lazySrc = imgUrl;
-                    loader = document.createElement("div");
-                    loader.className = "anima-shimmer";
-                    const spinner = document.createElement("div");
-                    spinner.className = "anima-spinner";
-                    loader.appendChild(spinner);
-                    cardClip.appendChild(loader);
-                }
-                
-                img.onload = () => {
-                    img.style.opacity = "1";
-                    loader?.remove();
-                    markImageLoaded(imgUrl);
-                };
-                img.onerror = () => {
-                    // 如果还没尝试过缓存代理，则回退到本地缓存
-                    if (!img.dataset.cacheTried && !cacheMode) {
-                        img.dataset.cacheTried = "1";
-                        img.src = getCacheProxyUrl(originalSrc);
-                        return;
+
+                // ★ v3 修复：Cache ON = 只读本地缓存；Cache OFF = CDN + 后台预缓存
+                const cdnUrl = getImgUrl(item.name, item.copyright);
+                const effectiveSrc = cacheMode
+                    ? `/anima-tools/cached-image?readonly=1&_cb=${cacheBustVersion}&namespace=anima_character_selector&url=${encodeURIComponent(cdnUrl)}`
+                    : cdnUrl;
+
+                if (cacheMode) {
+                    // ========== 缓存开启：只读模式 ==========
+                    if (isImageLoaded(effectiveSrc)) {
+                        // 内存缓存命中：立即显示（无需网络）
+                        img.src = effectiveSrc;
+                        img.style.opacity = "1";
+                    } else {
+                        // 未缓存到本地 → 直接显示占位，不下 CDN、无 spinner、不发起请求
+                        placeholder.style.opacity = "1";
+                        // 不设 dataset.lazySrc，observer 不会触发任何请求
                     }
-                    img.style.display = "none";
-                    loader?.remove();
-                    placeholder.style.opacity = "1";
-                };
+
+                    img.onload = () => {
+                        img.style.opacity = "1";
+                        img.style.display = "";
+                        placeholder.style.opacity = "0";
+                        markImageLoaded(effectiveSrc);
+                    };
+                    img.onerror = () => {
+                        // readonly 模式下 404（未缓存）或任何错误 → 占位显示
+                        img.style.display = "none";
+                        placeholder.style.opacity = "1";
+                    };
+                } else {
+                    // ========== 缓存关闭：CDN 直连 + 后台预缓存 ==========
+                    let loader = null;
+                    let loadAttempts = 0;
+                    const MAX_LOAD_ATTEMPTS = 2;
+
+                    if (isImageLoaded(effectiveSrc)) {
+                        img.src = effectiveSrc;
+                        img.style.opacity = "1";
+                    } else {
+                        // 惰性加载：由 IntersectionObserver 触发
+                        img.dataset.lazySrc = effectiveSrc;
+                        loader = document.createElement("div");
+                        loader.className = "anima-shimmer";
+                        const spinner = document.createElement("div");
+                        spinner.className = "anima-spinner";
+                        loader.appendChild(spinner);
+                        cardClip.appendChild(loader);
+                    }
+
+                    img.onload = () => {
+                        img.style.opacity = "1";
+                        img.style.display = "";
+                        placeholder.style.opacity = "0";
+                        loader?.remove();
+                        loader = null;
+                        markImageLoaded(effectiveSrc);
+                        // ★ 后台预缓存：加载成功后把图片缓存到磁盘，供 cache ON 时使用
+                        fetch(
+                            `/anima-tools/cache-image-async?namespace=anima_character_selector&url=${encodeURIComponent(cdnUrl)}`,
+                            { method: "POST", keepalive: true }
+                        ).catch(() => {});
+                    };
+                    img.onerror = () => {
+                        loadAttempts++;
+                        if (loadAttempts >= MAX_LOAD_ATTEMPTS) {
+                            img.style.display = "none";
+                            loader?.remove();
+                            loader = null;
+                            placeholder.style.opacity = "1";
+                            return;
+                        }
+                        // 首次 CDN 失败 → 回退到本地缓存代理（非 readonly）
+                        const proxyUrl = `/anima-tools/cached-image?namespace=anima_character_selector&url=${encodeURIComponent(cdnUrl)}`;
+                        if (loadAttempts === 1 && proxyUrl !== img.src) {
+                            img.src = proxyUrl;
+                            return;
+                        }
+                        // 加时间戳防浏览器缓存
+                        const retryUrl = (img.src || "").includes("?")
+                            ? img.src + "&_retry=" + Date.now()
+                            : img.src + "?_retry=" + Date.now();
+                        img.src = retryUrl;
+                    };
+                }
+
                 cardClip.appendChild(img);
                 charImageObserver.observe(img);
             }

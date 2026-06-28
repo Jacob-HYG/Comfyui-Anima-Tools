@@ -777,9 +777,11 @@ NODE_DISPLAY_NAME_MAPPINGS = {
 }
 
 # ----------------- 后端持久化 API 路由 -----------------
+import asyncio
 import folder_paths
 from server import PromptServer
 from aiohttp import web
+import aiohttp
 import json
 import os
 import hashlib
@@ -2282,21 +2284,34 @@ CACHE_NAMESPACE_CLOTHING = "anima_clothing_selector"
 CACHE_NAMESPACE_BACKGROUND = "anima_background_selector"
 
 
+_cached_image_semaphore = asyncio.Semaphore(8)
+_cached_image_session = None
+
+
+def _get_cached_image_session():
+    """全局共享的 aiohttp 会话，避免每次请求创建新会话。"""
+    global _cached_image_session
+    if _cached_image_session is None or _cached_image_session.closed:
+        connector = aiohttp.TCPConnector(limit=16, force_close=False)
+        _cached_image_session = aiohttp.ClientSession(connector=connector)
+    return _cached_image_session
+
+
 @PromptServer.instance.routes.get("/anima-tools/cached-image")
 async def get_cached_image(request):
     """
-    图片缓存代理端点:
-    接受 namespace 参数以按选择器分文件夹存储。
-    - HIT  → 直接返回缓存文件
-    - MISS → 从 CDN 下载 → 原子写入 → 返回
+    图片缓存代理端点 v3:
+    - readonly=1 → 仅返回已缓存文件，MISS 直接 404（不下 CDN）
+    - readonly=0 → 同 v2：HIT 返回文件，MISS 下载后返回
     """
+    namespace = request.query.get("namespace", "default")
+    url = request.query.get("url", "")
+    readonly = request.query.get("readonly", "0") == "1"
     try:
-        namespace = request.query.get("namespace", "default")
-        cache = get_cache(namespace)
-        url = request.query.get("url", "")
         if not url:
             return web.Response(status=400, text="Missing url parameter")
 
+        cache = get_cache(namespace)
         if not cache.is_allowed_url(url):
             print(f"[Anima Tools] Blocked cache request for unauthorized domain: {url}")
             return web.Response(status=403, text="Domain not allowed")
@@ -2308,25 +2323,103 @@ async def get_cached_image(request):
                 headers={
                     "Content-Type": cache.get_content_type(url),
                     "X-Cache": "HIT",
+                    "Cache-Control": "public, max-age=86400",
                 },
             )
 
-        data = await cache.fetch_and_cache(url)
-        if data is not None:
+        # readonly 模式：MISS 直接返回 404，不下 CDN
+        # ★ 必须 no-store，防止浏览器缓存 404 导致后续文件已缓存仍返回旧 404
+        if readonly:
             return web.Response(
-                body=data,
-                headers={
-                    "Content-Type": cache.get_content_type(url),
-                    "X-Cache": "MISS",
-                },
+                status=404, text="Not cached",
+                headers={"Cache-Control": "no-store, must-revalidate"},
             )
 
-        return web.Response(status=404)
+        # MISS + 非 readonly：限制并发下载
+        async with _cached_image_semaphore:
+            cached_path = cache.get_path(url)
+            if cached_path:
+                return web.FileResponse(
+                    cached_path,
+                    headers={
+                        "Content-Type": cache.get_content_type(url),
+                        "X-Cache": "HIT",
+                        "Cache-Control": "public, max-age=86400",
+                    },
+                )
+
+            # 带重试的 CDN 下载
+            retries = 2
+            last_error = None
+            for attempt in range(retries):
+                try:
+                    data = await cache.fetch_and_cache(
+                        url, session=_get_cached_image_session()
+                    )
+                    if data is not None:
+                        cached_path = cache.get_path(url)
+                        if cached_path:
+                            return web.FileResponse(
+                                cached_path,
+                                headers={
+                                    "Content-Type": cache.get_content_type(url),
+                                    "X-Cache": "MISS",
+                                    "Cache-Control": "public, max-age=86400",
+                                },
+                            )
+                        return web.Response(
+                            body=data,
+                            headers={
+                                "Content-Type": cache.get_content_type(url),
+                                "X-Cache": "MISS",
+                            },
+                        )
+                except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                    last_error = e
+                    if attempt < retries - 1:
+                        await asyncio.sleep(0.5 * (attempt + 1))
+                    continue
+
+            print(
+                f"[Anima Tools] Cached image failed after {retries} retries: "
+                f"ns={namespace} url={url[:80]} err={last_error}"
+            )
+            return web.Response(status=502, text=f"Failed to fetch image after {retries} retries")
     except web.HTTPException:
         raise
     except Exception as e:
-        print(f"[Anima Tools] Cached image error: {e}")
+        print(f"[Anima Tools] Cached image error: ns={namespace} url={url[:80]} err={e}")
         return web.Response(status=500)
+
+
+@PromptServer.instance.routes.post("/anima-tools/cache-image-async")
+async def cache_image_async(request):
+    """
+    后台预缓存端点（fire-and-forget）：
+    接受 namespace 和 url，在后台下载图片到磁盘缓存。
+    立即返回 202，不等待下载完成。
+    用于 Cache OFF 时在图片加载成功后后台预缓存。
+    """
+    namespace = request.query.get("namespace", "default")
+    url = request.query.get("url", "")
+    try:
+        if not url:
+            return web.json_response({"success": False, "error": "Missing url"}, status=400)
+
+        cache = get_cache(namespace)
+        if not cache.is_allowed_url(url):
+            return web.json_response({"success": False, "error": "Domain not allowed"}, status=403)
+
+        # 已缓存 → 无需操作
+        if cache.has(url):
+            return web.json_response({"success": True, "status": "already_cached"})
+
+        # 后台 fire-and-forget 下载
+        asyncio.create_task(cache.fetch_and_cache(url, session=_get_cached_image_session()))
+        return web.json_response({"success": True, "status": "queued"}, status=202)
+    except Exception as e:
+        print(f"[Anima Tools] Cache async error: ns={namespace} url={url[:80]} err={e}")
+        return web.json_response({"success": False, "error": str(e)}, status=500)
 
 
 @PromptServer.instance.routes.post("/anima-tools/clear-cache")

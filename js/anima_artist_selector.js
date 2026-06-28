@@ -114,7 +114,9 @@ async function openArtistSelectorModal(node, tagsWidget) {
 
     // 本地图片缓存模式 (持久化，适合离线或慢速网络环境)
     const CACHE_STORAGE_KEY = "anima-selector-use-cache";
+    const CACHE_BUST_KEY = "anima-selector-cache-bust";
     let cacheMode = localStorage.getItem(CACHE_STORAGE_KEY) === "true";
+    let cacheBustVersion = parseInt(localStorage.getItem(CACHE_BUST_KEY) || "0");
 
     // 记忆排序、页数和滚动位置配置 (本地持久化读取)
     const SORT_STORAGE_KEY = "anima-selector-active-sort";
@@ -568,7 +570,7 @@ async function openArtistSelectorModal(node, tagsWidget) {
     function getImageUrl(partition, id) {
         const cdnUrl = getImgUrl(partition, id);
         if (cacheMode) {
-            return `/anima-tools/cached-image?namespace=anima_artist_selector&url=${encodeURIComponent(cdnUrl)}`;
+            return `/anima-tools/cached-image?readonly=1&_cb=${cacheBustVersion}&namespace=anima_artist_selector&url=${encodeURIComponent(cdnUrl)}`;
         }
         return cdnUrl;
     }
@@ -1095,6 +1097,8 @@ async function openArtistSelectorModal(node, tagsWidget) {
         cacheMode = !cacheMode;
         localStorage.setItem(CACHE_STORAGE_KEY, cacheMode.toString());
         if (cacheMode) {
+            cacheBustVersion++;
+            localStorage.setItem(CACHE_BUST_KEY, cacheBustVersion.toString());
             cacheToggleBtn.innerHTML = `
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
@@ -1272,8 +1276,10 @@ async function openArtistSelectorModal(node, tagsWidget) {
         entries.forEach(entry => {
             if (entry.isIntersecting) {
                 const el = entry.target;
-                if (el.dataset.lazySrc) {
+                if (el.dataset.lazySrc && !el.src) {
                     el.src = el.dataset.lazySrc;
+                    delete el.dataset.lazySrc;
+                } else if (el.dataset.lazySrc && el.src) {
                     delete el.dataset.lazySrc;
                 }
                 artistImageObserver.unobserve(el);
@@ -2229,44 +2235,84 @@ async function openArtistSelectorModal(node, tagsWidget) {
                     transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
                 `;
                 img.loading = "lazy";
-                
+
                 const partition = item.p || 1;
-                const imgUrl = getImgUrl(partition, item.id);
-                const originalSrc = imgUrl;
-                img.src = cacheMode ? getCacheProxyUrl(originalSrc) : originalSrc;
-                
-                let loader = null;
-                if (isImageLoaded(imgUrl)) {
-                    // 缓存命中：直接显示，跳过 spinner
-                    img.src = imgUrl;
-                    img.style.opacity = "1";
-                } else {
-                    // 未缓存：懒加载
-                    img.dataset.lazySrc = imgUrl;
-                    loader = document.createElement("div");
-                    loader.className = "anima-shimmer";
-                    const spinner = document.createElement("div");
-                    spinner.className = "anima-spinner";
-                    loader.appendChild(spinner);
-                    cardClip.appendChild(loader);
-                }
-                
-                img.onload = () => {
-                    img.style.opacity = "1";
-                    loader?.remove();
-                    markImageLoaded(imgUrl);
-                };
-                img.onerror = () => {
-                    // 如果还没尝试过缓存代理，则回退到本地缓存
-                    if (!img.dataset.cacheTried && !cacheMode) {
-                        img.dataset.cacheTried = "1";
-                        img.src = getCacheProxyUrl(originalSrc);
-                        return;
+                const cdnUrl = getImgUrl(partition, item.id);
+                const ns = "anima_artist_selector";
+
+                if (cacheMode) {
+                    // ========== 缓存开启：只读模式 ==========
+                    const readonlyUrl = `/anima-tools/cached-image?readonly=1&_cb=${cacheBustVersion}&namespace=${ns}&url=${encodeURIComponent(cdnUrl)}`;
+                    if (isImageLoaded(readonlyUrl)) {
+                        img.src = readonlyUrl;
+                        img.style.opacity = "1";
+                    } else {
+                        placeholder.style.opacity = "1";
+                        // 不设 dataset.lazySrc，observer 不会触发任何请求
                     }
-                    img.style.display = "none";
-                    loader?.remove();
-                    placeholder.style.opacity = "1";
-                };
+                    img.onload = () => {
+                        img.style.opacity = "1";
+                        img.style.display = "";
+                        placeholder.style.opacity = "0";
+                        markImageLoaded(readonlyUrl);
+                    };
+                    img.onerror = () => {
+                        img.style.display = "none";
+                        placeholder.style.opacity = "1";
+                    };
+                } else {
+                    // ========== 缓存关闭：CDN 直连 + 后台预缓存 ==========
+                    let loader = null;
+                    let loadAttempts = 0;
+                    const MAX_LOAD_ATTEMPTS = 2;
+
+                    if (isImageLoaded(cdnUrl)) {
+                        img.src = cdnUrl;
+                        img.style.opacity = "1";
+                    } else {
+                        img.dataset.lazySrc = cdnUrl;
+                        loader = document.createElement("div");
+                        loader.className = "anima-shimmer";
+                        const spinner = document.createElement("div");
+                        spinner.className = "anima-spinner";
+                        loader.appendChild(spinner);
+                        cardClip.appendChild(loader);
+                    }
+
+                    img.onload = () => {
+                        img.style.opacity = "1";
+                        img.style.display = "";
+                        placeholder.style.opacity = "0";
+                        loader?.remove();
+                        loader = null;
+                        markImageLoaded(cdnUrl);
+                        // 后台预缓存到磁盘
+                        fetch(
+                            `/anima-tools/cache-image-async?namespace=${ns}&url=${encodeURIComponent(cdnUrl)}`,
+                            { method: "POST", keepalive: true }
+                        ).catch(() => {});
+                    };
+                    img.onerror = () => {
+                        loadAttempts++;
+                        if (loadAttempts >= MAX_LOAD_ATTEMPTS) {
+                            img.style.display = "none";
+                            loader?.remove();
+                            loader = null;
+                            placeholder.style.opacity = "1";
+                            return;
+                        }
+                        const proxyUrl = `/anima-tools/cached-image?namespace=${ns}&url=${encodeURIComponent(cdnUrl)}`;
+                        if (loadAttempts === 1 && proxyUrl !== img.src) {
+                            img.src = proxyUrl;
+                            return;
+                        }
+                        const retryUrl = (img.src || "").includes("?")
+                            ? img.src + "&_retry=" + Date.now()
+                            : img.src + "?_retry=" + Date.now();
+                        img.src = retryUrl;
+                    };
+                }
+
                 cardClip.appendChild(img);
                 artistImageObserver.observe(img);
             }

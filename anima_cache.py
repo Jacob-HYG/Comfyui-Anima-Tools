@@ -11,6 +11,7 @@ Usage:
     cache_path = cache.get_path(image_url)
 """
 
+import asyncio
 import hashlib
 import json
 import os
@@ -109,8 +110,13 @@ class ImageCache:
 
     # ── fetch & store ─────────────────────────────────────────────
 
-    async def fetch_and_cache(self, url: str, timeout: int = 20) -> Optional[bytes]:
+    async def fetch_and_cache(
+        self, url: str, timeout: int = 20, session: Optional[aiohttp.ClientSession] = None
+    ) -> Optional[bytes]:
         """Download *url* and atomically write to the cache.
+
+        If *session* is provided, it will be reused (recommended for
+        batch loads to avoid connection-per-request overhead).
 
         Returns the image bytes on success, or None on failure.
         """
@@ -119,25 +125,53 @@ class ImageCache:
             return None
 
         timeout_obj = aiohttp.ClientTimeout(total=timeout)
-        async with aiohttp.ClientSession(timeout=timeout_obj) as session:
-            async with session.get(url) as resp:
-                if resp.status != 200:
-                    print(
-                        f"[Anima Cache:{self.namespace}] "
-                        f"CDN returned {resp.status} for: {url}"
-                    )
-                    return None
-                data = await resp.read()
+        close_session = session is None
 
-        cache_path = self._path(url)
-        with self._lock:
-            os.makedirs(self._cache_dir, exist_ok=True)
-            tmp_path = cache_path + ".tmp"
-            with open(tmp_path, "wb") as f:
-                f.write(data)
-            os.replace(tmp_path, cache_path)
+        if session is None:
+            session = aiohttp.ClientSession(timeout=timeout_obj)
 
-        return data
+        try:
+            # 带简易重试的下载
+            last_exc = None
+            for attempt in range(3):
+                try:
+                    async with session.get(url, timeout=timeout_obj) as resp:
+                        if resp.status != 200:
+                            print(
+                                f"[Anima Cache:{self.namespace}] "
+                                f"CDN returned {resp.status} for: {url}"
+                            )
+                            last_exc = Exception(f"HTTP {resp.status}")
+                            if attempt < 2:
+                                await asyncio.sleep(0.3 * (attempt + 1))
+                            continue
+                        data = await resp.read()
+                        break
+                except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                    last_exc = e
+                    if attempt < 2:
+                        await asyncio.sleep(0.3 * (attempt + 1))
+                    continue
+            else:
+                # All attempts exhausted
+                print(
+                    f"[Anima Cache:{self.namespace}] "
+                    f"Failed to fetch after 3 attempts: {url} — {last_exc}"
+                )
+                return None
+
+            cache_path = self._path(url)
+            with self._lock:
+                os.makedirs(self._cache_dir, exist_ok=True)
+                tmp_path = cache_path + ".tmp"
+                with open(tmp_path, "wb") as f:
+                    f.write(data)
+                os.replace(tmp_path, cache_path)
+
+            return data
+        finally:
+            if close_session:
+                await session.close()
 
     # ── management ────────────────────────────────────────────────
 

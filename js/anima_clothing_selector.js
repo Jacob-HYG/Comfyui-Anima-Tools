@@ -235,10 +235,12 @@ async function openClothingSelectorModal(node, tagsWidget) {
     const DISPLAY_LANG_STORAGE_KEY = "anima-clothing-selector-display-lang";
     const FILTER_STORAGE_KEY = "anima-clothing-selector-filters";
     const CACHE_STORAGE_KEY = "anima-clothing-selector-use-cache";
+    const CACHE_BUST_KEY = "anima-clothing-selector-cache-bust";
 
     let activeSort = localStorage.getItem(SORT_STORAGE_KEY) || "id-asc";
     let displayLang = localStorage.getItem(DISPLAY_LANG_STORAGE_KEY) || "bilingual";
     let cacheMode = localStorage.getItem(CACHE_STORAGE_KEY) === "true";
+    let cacheBustVersion = parseInt(localStorage.getItem(CACHE_BUST_KEY) || "0");
     let currentPage = parseInt(localStorage.getItem(PAGE_STORAGE_KEY), 10) || 1;
     let showSelectedOnly = false;
     let filteredData = [];
@@ -886,6 +888,10 @@ async function openClothingSelectorModal(node, tagsWidget) {
         return `/anima-tools/cached-image?namespace=anima_clothing_selector&url=${encodeURIComponent(previewUrl)}`;
     }
 
+    function getReadonlyProxyUrl(previewUrl) {
+        return `/anima-tools/cached-image?readonly=1&_cb=${cacheBustVersion}&namespace=anima_clothing_selector&url=${encodeURIComponent(previewUrl)}`;
+    }
+
     const toolbar = createEl("div");
     toolbar.style.cssText = `
         padding: 14px 26px;
@@ -947,6 +953,8 @@ async function openClothingSelectorModal(node, tagsWidget) {
         localStorage.setItem(CACHE_STORAGE_KEY, cacheMode.toString());
         cacheToggleBtn.innerText = cacheMode ? t("Cache: ON") : t("Cache: OFF");
         if (cacheMode) {
+            cacheBustVersion++;
+            localStorage.setItem(CACHE_BUST_KEY, cacheBustVersion.toString());
             cacheToggleBtn.style.background = "rgba(34, 197, 94, 0.15)";
             cacheToggleBtn.style.borderColor = "rgba(34, 197, 94, 0.4)";
             cacheToggleBtn.style.color = "#4ade80";
@@ -1034,8 +1042,10 @@ async function openClothingSelectorModal(node, tagsWidget) {
         entries.forEach(entry => {
             if (!entry.isIntersecting) return;
             const img = entry.target;
-            if (img.dataset.lazySrc) {
+            if (img.dataset.lazySrc && !img.src) {
                 img.src = img.dataset.lazySrc;
+                delete img.dataset.lazySrc;
+            } else if (img.dataset.lazySrc && img.src) {
                 delete img.dataset.lazySrc;
             }
             imageObserver.unobserve(img);
@@ -1483,39 +1493,64 @@ async function openClothingSelectorModal(node, tagsWidget) {
             img.loading = "lazy";
             img.decoding = "async";
             const originalSrc = item.preview;
-            const imgUrl = cacheMode ? getCacheProxyUrl(originalSrc) : originalSrc;
-            if (isImageLoaded(originalSrc)) {
-                img.src = imgUrl;
-                img.style.opacity = "1";
+            const ns = "anima_clothing_selector";
+
+            if (cacheMode) {
+                // ========== 缓存开启：只读模式 ==========
+                const readonlyUrl = getReadonlyProxyUrl(originalSrc);
+                if (isImageLoaded(readonlyUrl)) {
+                    img.src = readonlyUrl;
+                    img.style.opacity = "1";
+                } else {
+                    placeholder.style.opacity = "1";
+                }
+                img.onload = () => {
+                    img.style.opacity = "1";
+                    img.style.display = "";
+                    placeholder.style.opacity = "0";
+                    loader?.remove();
+                    markImageLoaded(readonlyUrl);
+                };
+                img.onerror = () => {
+                    img.style.display = "none";
+                    loader?.remove();
+                    placeholder.style.opacity = "1";
+                };
             } else {
-                img.dataset.lazySrc = imgUrl;
-                loader = createEl("div", "anima-clothing-shimmer");
-                const spinner = createEl("div", "anima-clothing-spinner");
-                loader.appendChild(spinner);
-                clip.appendChild(loader);
-            }
-            img.onload = () => {
-                img.style.opacity = "1";
-                placeholder.style.opacity = "0";
-                loader?.remove();
-                markImageLoaded(originalSrc);
-            };
-            img.onerror = () => {
-                // 如果还没尝试过缓存代理，则回退到本地缓存
-                if (!img.dataset.cacheTried && cacheMode) {
-                    img.dataset.cacheTried = "1";
+                // ========== 缓存关闭：CDN 直连 + 后台预缓存 ==========
+                if (isImageLoaded(originalSrc)) {
                     img.src = originalSrc;
-                    return;
+                    img.style.opacity = "1";
+                } else {
+                    img.dataset.lazySrc = originalSrc;
+                    loader = createEl("div", "anima-clothing-shimmer");
+                    const spinner = createEl("div", "anima-clothing-spinner");
+                    loader.appendChild(spinner);
+                    clip.appendChild(loader);
                 }
-                if (!img.dataset.cacheTried && !cacheMode) {
-                    img.dataset.cacheTried = "1";
-                    img.src = getCacheProxyUrl(originalSrc);
-                    return;
-                }
-                img.remove();
-                loader?.remove();
-                placeholder.style.opacity = "1";
-            };
+                img.onload = () => {
+                    img.style.opacity = "1";
+                    img.style.display = "";
+                    placeholder.style.opacity = "0";
+                    loader?.remove();
+                    markImageLoaded(originalSrc);
+                    // 后台预缓存
+                    fetch(
+                        `/anima-tools/cache-image-async?namespace=${ns}&url=${encodeURIComponent(originalSrc)}`,
+                        { method: "POST", keepalive: true }
+                    ).catch(() => {});
+                };
+                img.onerror = () => {
+                    if (!img.dataset.cacheTried) {
+                        img.dataset.cacheTried = "1";
+                        img.src = getCacheProxyUrl(originalSrc);
+                        return;
+                    }
+                    img.remove();
+                    loader?.remove();
+                    placeholder.style.opacity = "1";
+                };
+            }
             clip.appendChild(img);
             imageObserver.observe(img);
         }

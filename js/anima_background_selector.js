@@ -193,6 +193,10 @@ function copyText(text, callback) {
 function getCacheProxyUrl(previewUrl) {
     return `/anima-tools/cached-image?namespace=anima_background_selector&url=${encodeURIComponent(previewUrl)}`;
 }
+// 构造只读缓存代理 URL（Cache ON 时使用，不下 CDN）
+function getReadonlyProxyUrl(previewUrl, bustVersion) {
+    return `/anima-tools/cached-image?readonly=1&_cb=${bustVersion}&namespace=anima_background_selector&url=${encodeURIComponent(previewUrl)}`;
+}
 
 async function openBackgroundSelectorModal(node, tagsWidget) {
     const backgroundData = Array.isArray(window.backgroundData) ? window.backgroundData : [];
@@ -253,6 +257,7 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
     const FILTER_STORAGE_KEY = "anima-background-selector-filters";
     const COLLECTIONS_COLLAPSE_STORAGE_KEY = "anima-background-selector-collections-collapsed";
     const CACHE_STORAGE_KEY = "anima-background-selector-use-cache";
+    const CACHE_BUST_KEY = "anima-background-selector-cache-bust";
 
     let activeSort = localStorage.getItem(SORT_STORAGE_KEY) || "id-asc";
     let displayLang = localStorage.getItem(DISPLAY_LANG_STORAGE_KEY) || "bilingual";
@@ -264,6 +269,7 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
     let lastSidebarScrollTop = parseInt(localStorage.getItem(SIDEBAR_SCROLL_STORAGE_KEY), 10) || 0;
     let collectionsCollapsed = localStorage.getItem(COLLECTIONS_COLLAPSE_STORAGE_KEY) === "true";
     let cacheMode = localStorage.getItem(CACHE_STORAGE_KEY) === "true";
+    let cacheBustVersion = parseInt(localStorage.getItem(CACHE_BUST_KEY) || "0");
 
     const activeFilters = {
         categories: new Set(),
@@ -1044,6 +1050,8 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
         localStorage.setItem(CACHE_STORAGE_KEY, cacheMode.toString());
         cacheToggleBtn.innerText = cacheMode ? t("Cache: ON") : t("Cache: OFF");
         if (cacheMode) {
+            cacheBustVersion++;
+            localStorage.setItem(CACHE_BUST_KEY, cacheBustVersion.toString());
             cacheToggleBtn.style.background = "rgba(34, 197, 94, 0.15)";
             cacheToggleBtn.style.borderColor = "rgba(34, 197, 94, 0.4)";
             cacheToggleBtn.style.color = "#4ade80";
@@ -1131,8 +1139,10 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
         entries.forEach(entry => {
             if (!entry.isIntersecting) return;
             const img = entry.target;
-            if (img.dataset.lazySrc) {
+            if (img.dataset.lazySrc && !img.src) {
                 img.src = img.dataset.lazySrc;
+                delete img.dataset.lazySrc;
+            } else if (img.dataset.lazySrc && img.src) {
                 delete img.dataset.lazySrc;
             }
             imageObserver.unobserve(img);
@@ -1654,34 +1664,64 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
             img.loading = "lazy";
             img.decoding = "async";
             const originalSrc = item.preview;
-            const imgUrl = cacheMode ? getCacheProxyUrl(originalSrc) : originalSrc;
-            if (isImageLoaded(originalSrc)) {
-                img.src = imgUrl;
-                img.style.opacity = "1";
-            } else {
-                img.dataset.lazySrc = imgUrl;
-                loader = createEl("div", "anima-background-shimmer");
-                const spinner = createEl("div", "anima-background-spinner");
-                loader.appendChild(spinner);
-                clip.appendChild(loader);
-            }
-            img.onload = () => {
-                img.style.opacity = "1";
-                placeholder.style.opacity = "0";
-                loader?.remove();
-                markImageLoaded(originalSrc);
-            };
-            img.onerror = () => {
-                // 如果还没尝试过缓存代理，则回退到本地缓存
-                if (!img.dataset.cacheTried && !cacheMode) {
-                    img.dataset.cacheTried = "1";
-                    img.src = getCacheProxyUrl(originalSrc);
-                    return;
+            const ns = "anima_background_selector";
+
+            if (cacheMode) {
+                // ========== 缓存开启：只读模式 ==========
+                const readonlyUrl = getReadonlyProxyUrl(originalSrc, cacheBustVersion);
+                if (isImageLoaded(readonlyUrl)) {
+                    img.src = readonlyUrl;
+                    img.style.opacity = "1";
+                } else {
+                    placeholder.style.opacity = "1";
                 }
-                img.remove();
-                loader?.remove();
-                placeholder.style.opacity = "1";
-            };
+                img.onload = () => {
+                    img.style.opacity = "1";
+                    img.style.display = "";
+                    placeholder.style.opacity = "0";
+                    loader?.remove();
+                    markImageLoaded(readonlyUrl);
+                };
+                img.onerror = () => {
+                    img.style.display = "none";
+                    loader?.remove();
+                    placeholder.style.opacity = "1";
+                };
+            } else {
+                // ========== 缓存关闭：CDN 直连 + 后台预缓存 ==========
+                if (isImageLoaded(originalSrc)) {
+                    img.src = originalSrc;
+                    img.style.opacity = "1";
+                } else {
+                    img.dataset.lazySrc = originalSrc;
+                    loader = createEl("div", "anima-background-shimmer");
+                    const spinner = createEl("div", "anima-background-spinner");
+                    loader.appendChild(spinner);
+                    clip.appendChild(loader);
+                }
+                img.onload = () => {
+                    img.style.opacity = "1";
+                    img.style.display = "";
+                    placeholder.style.opacity = "0";
+                    loader?.remove();
+                    markImageLoaded(originalSrc);
+                    // 后台预缓存
+                    fetch(
+                        `/anima-tools/cache-image-async?namespace=${ns}&url=${encodeURIComponent(originalSrc)}`,
+                        { method: "POST", keepalive: true }
+                    ).catch(() => {});
+                };
+                img.onerror = () => {
+                    if (!img.dataset.cacheTried) {
+                        img.dataset.cacheTried = "1";
+                        img.src = getCacheProxyUrl(originalSrc);
+                        return;
+                    }
+                    img.remove();
+                    loader?.remove();
+                    placeholder.style.opacity = "1";
+                };
+            }
             clip.appendChild(img);
             imageObserver.observe(img);
         }
