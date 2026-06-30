@@ -130,12 +130,20 @@ class ImageCache:
         if session is None:
             session = aiohttp.ClientSession(timeout=timeout_obj)
 
+        # 模仿浏览器请求头，避免 CDN 拦截非浏览器请求
+        cdn_headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": "https://animadex.net/",
+        }
+
         try:
             # 带简易重试的下载
             last_exc = None
             for attempt in range(3):
                 try:
-                    async with session.get(url, timeout=timeout_obj) as resp:
+                    async with session.get(url, headers=cdn_headers, timeout=timeout_obj) as resp:
                         if resp.status != 200:
                             print(
                                 f"[Anima Cache:{self.namespace}] "

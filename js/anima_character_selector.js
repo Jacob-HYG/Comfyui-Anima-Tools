@@ -3133,14 +3133,12 @@ async function openCharacterSelectorModal(node, tagsWidget) {
 
                 if (cacheMode) {
                     // ========== 缓存开启：只读模式 ==========
+                    // 始终请求 readonly proxy：磁盘有文件返回文件，没有返回 404
+                    // onerror 处理 404 → 显示占位图
+                    img.src = effectiveSrc;
                     if (isImageLoaded(effectiveSrc)) {
-                        // 内存缓存命中：立即显示（无需网络）
-                        img.src = effectiveSrc;
+                        // 内存缓存命中：立即显示，无需等待网络
                         img.style.opacity = "1";
-                    } else {
-                        // 未缓存到本地 → 直接显示占位，不下 CDN、无 spinner、不发起请求
-                        placeholder.style.opacity = "1";
-                        // 不设 dataset.lazySrc，observer 不会触发任何请求
                     }
 
                     img.onload = () => {
