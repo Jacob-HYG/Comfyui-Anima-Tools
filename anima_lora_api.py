@@ -540,7 +540,7 @@ def _download_thread(task_id: str, download_url: str, save_path: str, api_key: s
         print(f"[Anima Tools] Download HTTP error for {task_id}: {e.code} - {e.reason}")
         error_msg = f"HTTP Error {e.code}: {e.reason}"
         if e.code == 401 or e.code == 403:
-            error_msg = "HTTP Error 401: Unauthorized (此模型下载需要 Civitai API Key，请在设置中配置后再试)"
+            error_msg = "HTTP Error 401: Unauthorized. This model requires a Civitai API key; configure it in settings and try again."
         with _DOWNLOAD_JOBS_LOCK:
             _DOWNLOAD_JOBS[task_id]["status"] = "failed"
             _DOWNLOAD_JOBS[task_id]["error"] = error_msg

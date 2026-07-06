@@ -13,41 +13,15 @@ const THEME = {
 };
 
 const CATEGORY_LIST = [
-    "礼服/裙装 (Dress & Gown)",
-    "日常/休闲 (Casual & Daily)",
-    "制服/西服 (Uniform & Suit)",
-    "泳装/内衣 (Swimsuit & Lingerie)",
-    "角色扮演/奇幻 (Fantasy & Cosplay)",
-    "性感/暴露 (Revealing)",
+    "Dress & Gown",
+    "Casual & Daily",
+    "Uniform & Suit",
+    "Swimsuit & Lingerie",
+    "Fantasy & Cosplay",
+    "Revealing",
 ];
 
-const TRAITS_TRANSLATION = {
-    "apron": "围裙",
-    "backless": "露背",
-    "bare legs": "光腿",
-    "boots": "靴子",
-    "collar": "衣领",
-    "garter belt": "吊袜带",
-    "glasses": "眼镜",
-    "gloves": "手套",
-    "halterneck": "吊颈式设计",
-    "high heels": "高跟鞋",
-    "kneehighs": "及膝袜",
-    "lace": "蕾丝",
-    "latex": "乳胶",
-    "leather": "皮革",
-    "miniskirt": "超短裙",
-    "off-shoulder": "露肩/一字领",
-    "pantyhose": "连裤袜",
-    "ribbon": "丝带/蝴蝶结",
-    "short shorts": "超短裤",
-    "side slit": "侧开叉",
-    "silk": "丝绸",
-    "sleeveless": "无袖",
-    "thighhighs": "大腿袜",
-    "tie": "领带/系带",
-    "translucent": "半透明",
-};
+const TRAITS_TRANSLATION = {};
 
 app.registerExtension({
     name: "AnimaClothingTagSelector.extension",
@@ -90,6 +64,14 @@ function normalizePromptToken(value) {
     return String(value || "").replace(/^_raw_:/, "").trim().toLowerCase();
 }
 
+function normalizeCategoryValue(category) {
+    const text = String(category || "").trim();
+    if (CATEGORY_LIST.includes(text)) return text;
+    const englishPart = text.match(/\(([^)]+)\)$/)?.[1];
+    if (englishPart && CATEGORY_LIST.includes(englishPart)) return englishPart;
+    return text;
+}
+
 function getItemKey(item) {
     return item?.isCustom ? `custom:${item.name}` : String(item?.id || item?.name || "");
 }
@@ -102,10 +84,7 @@ function formatDisplayName(item, displayLang) {
 }
 
 function getCategoryLabel(category, displayLang) {
-    if (displayLang === "en") {
-        return category.match(/\(([^)]+)\)/)?.[1] || category;
-    }
-    return category;
+    return category.match(/\(([^)]+)\)/)?.[1] || category;
 }
 
 function getTraitZh(trait, data) {
@@ -228,7 +207,7 @@ async function openClothingSelectorModal(node, tagsWidget) {
     const COLLECTIONS_COLLAPSE_STORAGE_KEY = "anima-clothing-selector-collections-collapsed";
 
     let activeSort = localStorage.getItem(SORT_STORAGE_KEY) || "id-asc";
-    let displayLang = localStorage.getItem(DISPLAY_LANG_STORAGE_KEY) || "bilingual";
+    let displayLang = localStorage.getItem(DISPLAY_LANG_STORAGE_KEY) || "en";
     let currentPage = parseInt(localStorage.getItem(PAGE_STORAGE_KEY), 10) || 1;
     let showSelectedOnly = false;
     let filteredData = [];
@@ -245,7 +224,7 @@ async function openClothingSelectorModal(node, tagsWidget) {
 
     try {
         const saved = JSON.parse(localStorage.getItem(FILTER_STORAGE_KEY) || "{}");
-        if (Array.isArray(saved.categories)) saved.categories.forEach(v => activeFilters.categories.add(v));
+        if (Array.isArray(saved.categories)) saved.categories.forEach(v => activeFilters.categories.add(normalizeCategoryValue(v)));
         if (Array.isArray(saved.traits)) saved.traits.forEach(v => activeFilters.traits.add(v));
         if (saved.collection) activeFilters.collection = saved.collection;
     } catch (e) {
@@ -1372,14 +1351,7 @@ async function openClothingSelectorModal(node, tagsWidget) {
 
     function triggerFilter() {
         const query = searchInput.value.toLowerCase().trim();
-        const aliases = {
-            "丝袜": ["stockings", "thighhighs", "pantyhose", "kneehighs", "socks", "legwear"],
-            "袜子": ["stockings", "thighhighs", "pantyhose", "kneehighs", "socks"],
-            "高跟鞋": ["high heels", "heels", "pumps", "stiletto"],
-            "手套": ["gloves", "mittens"],
-            "裙": ["dress", "skirt", "gown", "礼服", "裙装"],
-            "内衣": ["lingerie", "panties", "underwear", "bra"],
-        };
+        const aliases = {};
         let queryList = query ? [query] : [];
         for (const [key, values] of Object.entries(aliases)) {
             if (query.includes(key)) queryList = queryList.concat(values);
@@ -1418,7 +1390,7 @@ async function openClothingSelectorModal(node, tagsWidget) {
 
                 if (activeFilters.categories.size > 0) {
                     const categories = Array.isArray(item.categories) ? item.categories : [];
-                    if (!categories.some(category => activeFilters.categories.has(category))) return false;
+                    if (!categories.some(category => activeFilters.categories.has(normalizeCategoryValue(category)))) return false;
                 }
 
                 if (activeFilters.traits.size > 0) {

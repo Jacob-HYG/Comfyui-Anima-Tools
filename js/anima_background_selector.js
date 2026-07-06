@@ -13,64 +13,13 @@ const THEME = {
 };
 
 const CATEGORY_LIST = [
-    "自然与户外 (Nature & Outdoors)",
-    "都市与日常 (Urban & Daily)",
-    "幻想与异界 (Fantasy & Sci-Fi)",
-    "极简与纯色 (Minimalist & Abstract)",
+    "Nature & Outdoors",
+    "Urban & Daily",
+    "Fantasy & Sci-Fi",
+    "Minimalist & Abstract",
 ];
 
-const TRAITS_TRANSLATION = {
-    "abstract": "抽象",
-    "artistic": "艺术感",
-    "city": "城市",
-    "classroom": "教室",
-    "cool colors": "冷色调",
-    "cozy": "舒适",
-    "cyber": "赛博",
-    "dark": "昏暗",
-    "day": "白天",
-    "fantasy": "幻想",
-    "fire": "火焰",
-    "flower": "花朵",
-    "fog": "雾",
-    "foggy": "雾气",
-    "forest": "森林",
-    "glow": "发光",
-    "greenery": "绿植",
-    "home": "居家",
-    "horror": "恐怖",
-    "indoor": "室内",
-    "japanese": "日式",
-    "light rays": "光束",
-    "magic": "魔法",
-    "minimalism": "极简主义",
-    "minimalist": "极简",
-    "monster": "怪物",
-    "moonlight": "月光",
-    "nature": "自然",
-    "neon": "霓虹",
-    "night": "夜晚",
-    "outdoor": "室外",
-    "rainy": "雨天",
-    "ruins": "废墟",
-    "scifi": "科幻",
-    "sea": "海",
-    "shadow": "阴影",
-    "sky": "天空",
-    "snowy": "雪景",
-    "space": "太空",
-    "sparkles": "闪光",
-    "stars": "星空",
-    "stormy": "暴风雨",
-    "street": "街道",
-    "sunlight": "阳光",
-    "sunrise": "日出",
-    "sunset": "日落",
-    "surreal": "超现实",
-    "water": "水",
-    "white": "白色",
-    "winter": "冬季",
-};
+const TRAITS_TRANSLATION = {};
 
 app.registerExtension({
     name: "AnimaBackgroundTagSelector.extension",
@@ -113,6 +62,14 @@ function normalizePromptToken(value) {
     return String(value || "").replace(/^_raw_:/, "").trim().toLowerCase();
 }
 
+function normalizeCategoryValue(category) {
+    const text = String(category || "").trim();
+    if (CATEGORY_LIST.includes(text)) return text;
+    const englishPart = text.match(/\(([^)]+)\)$/)?.[1];
+    if (englishPart && CATEGORY_LIST.includes(englishPart)) return englishPart;
+    return text;
+}
+
 function getItemKey(item) {
     return item?.isCustom ? `custom:${item.name}` : String(item?.id || item?.name || "");
 }
@@ -125,10 +82,7 @@ function formatDisplayName(item, displayLang) {
 }
 
 function getCategoryLabel(category, displayLang) {
-    if (displayLang === "en") {
-        return category.match(/\(([^)]+)\)/)?.[1] || category;
-    }
-    return category;
+    return category.match(/\(([^)]+)\)/)?.[1] || category;
 }
 
 function getTraitZh(trait, data) {
@@ -240,7 +194,7 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
     const COLLECTIONS_COLLAPSE_STORAGE_KEY = "anima-background-selector-collections-collapsed";
 
     let activeSort = localStorage.getItem(SORT_STORAGE_KEY) || "id-asc";
-    let displayLang = localStorage.getItem(DISPLAY_LANG_STORAGE_KEY) || "bilingual";
+    let displayLang = localStorage.getItem(DISPLAY_LANG_STORAGE_KEY) || "en";
     let currentPage = parseInt(localStorage.getItem(PAGE_STORAGE_KEY), 10) || 1;
     let showSelectedOnly = false;
     let filteredData = [];
@@ -257,7 +211,7 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
 
     try {
         const saved = JSON.parse(localStorage.getItem(FILTER_STORAGE_KEY) || "{}");
-        if (Array.isArray(saved.categories)) saved.categories.forEach(v => activeFilters.categories.add(v));
+        if (Array.isArray(saved.categories)) saved.categories.forEach(v => activeFilters.categories.add(normalizeCategoryValue(v)));
         if (Array.isArray(saved.traits)) saved.traits.forEach(v => activeFilters.traits.add(v));
         if (saved.collection) activeFilters.collection = saved.collection;
     } catch (e) {
@@ -1384,23 +1338,7 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
 
     function triggerFilter() {
         const query = searchInput.value.toLowerCase().trim();
-        const aliases = {
-            "海滩": ["beach", "sea", "water", "sand"],
-            "大海": ["sea", "ocean", "water", "beach"],
-            "森林": ["forest", "nature", "greenery", "outdoor"],
-            "城市": ["city", "street", "urban"],
-            "街道": ["street", "city", "urban"],
-            "教室": ["classroom", "school"],
-            "房间": ["room", "home", "indoor"],
-            "室内": ["indoor", "home", "room"],
-            "室外": ["outdoor", "nature", "sky"],
-            "夜晚": ["night", "moonlight", "stars"],
-            "白天": ["day", "sunlight", "sky"],
-            "天空": ["sky", "clouds", "sunlight"],
-            "赛博": ["cyber", "neon", "scifi"],
-            "科幻": ["scifi", "cyber", "space"],
-            "幻想": ["fantasy", "magic", "surreal"],
-        };
+        const aliases = {};
         let queryList = query ? [query] : [];
         for (const [key, values] of Object.entries(aliases)) {
             if (query.includes(key)) queryList = queryList.concat(values);
@@ -1439,7 +1377,7 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
 
                 if (activeFilters.categories.size > 0) {
                     const categories = Array.isArray(item.categories) ? item.categories : [];
-                    if (!categories.some(category => activeFilters.categories.has(category))) return false;
+                    if (!categories.some(category => activeFilters.categories.has(normalizeCategoryValue(category)))) return false;
                 }
 
                 if (activeFilters.traits.size > 0) {

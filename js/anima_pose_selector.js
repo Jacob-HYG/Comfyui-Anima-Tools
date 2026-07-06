@@ -13,88 +13,17 @@ const THEME = {
 };
 
 const CATEGORY_LIST = [
-    "手势与手臂 (Gestures & Arms)",
-    "站立与动态 (Standing & Dynamic)",
-    "坐姿 (Sitting Poses)",
-    "卧姿与趴姿 (Lying & Prone)",
-    "整理服饰与发型 (Adjusting & Dressing)",
-    "道具与携物 (Props & Holding)",
-    "双人与互动 (Duo & Interaction)",
-    "日常与其它 (Daily & Miscellaneous)",
+    "Gestures & Arms",
+    "Standing & Dynamic",
+    "Sitting Poses",
+    "Lying & Prone",
+    "Adjusting & Dressing",
+    "Props & Holding",
+    "Duo & Interaction",
+    "Daily & Miscellaneous",
 ];
 
-const TRAITS_TRANSLATION = {
-    "adjusting": "整理",
-    "akimbo": "叉腰",
-    "arm": "手臂",
-    "arms": "双臂",
-    "armpit": "腋下",
-    "armpits": "腋下",
-    "back": "背后",
-    "balance": "平衡",
-    "balancing": "保持平衡",
-    "battle": "战斗",
-    "bending": "弯腰",
-    "bent": "弯曲",
-    "bowing": "鞠躬",
-    "carry": "携带",
-    "carrying": "携带",
-    "cheek": "脸颊",
-    "chest": "胸前",
-    "chin": "下巴",
-    "clenched": "握紧",
-    "closed": "闭合",
-    "clothes": "衣物",
-    "crawling": "爬行",
-    "crossed": "交叉",
-    "crouching": "蹲姿",
-    "cuddle": "拥抱",
-    "cuddling": "拥抱",
-    "dress": "裙装",
-    "ear": "耳朵",
-    "eye": "眼睛",
-    "eyes": "双眼",
-    "face": "脸部",
-    "feeding": "喂食",
-    "feet": "脚",
-    "fidgeting": "摆弄",
-    "fighting": "战斗",
-    "finger": "手指",
-    "fingers": "手指",
-    "fist": "拳头",
-    "fists": "拳头",
-    "hair": "头发",
-    "hand": "手",
-    "hands": "双手",
-    "head": "头部",
-    "holding": "持物",
-    "hug": "拥抱",
-    "hugging": "拥抱",
-    "kneeling": "跪姿",
-    "knees": "膝盖",
-    "leaning": "倚靠",
-    "legs": "双腿",
-    "lying": "躺姿",
-    "mouth": "嘴",
-    "one": "单手/单侧",
-    "open": "张开",
-    "outstretched": "伸出",
-    "peace": "胜利手势",
-    "pointing": "指向",
-    "pose": "姿势",
-    "prone": "趴姿",
-    "raised": "举起",
-    "reaching": "伸手",
-    "salute": "敬礼",
-    "sitting": "坐姿",
-    "spread": "张开",
-    "squatting": "蹲姿",
-    "standing": "站姿",
-    "support": "支撑",
-    "touching": "触碰",
-    "up": "向上",
-    "waving": "挥手",
-};
+const TRAITS_TRANSLATION = {};
 
 app.registerExtension({
     name: "AnimaPoseTagSelector.extension",
@@ -137,6 +66,14 @@ function normalizePromptToken(value) {
     return String(value || "").replace(/^_raw_:/, "").trim().toLowerCase();
 }
 
+function normalizeCategoryValue(category) {
+    const text = String(category || "").trim();
+    if (CATEGORY_LIST.includes(text)) return text;
+    const englishPart = text.match(/\(([^)]+)\)$/)?.[1];
+    if (englishPart && CATEGORY_LIST.includes(englishPart)) return englishPart;
+    return text;
+}
+
 function getItemKey(item) {
     return item?.isCustom ? `custom:${item.name}` : String(item?.id || item?.name || "");
 }
@@ -149,10 +86,7 @@ function formatDisplayName(item, displayLang) {
 }
 
 function getCategoryLabel(category, displayLang) {
-    if (displayLang === "en") {
-        return category.match(/\(([^)]+)\)/)?.[1] || category;
-    }
-    return category;
+    return category.match(/\(([^)]+)\)/)?.[1] || category;
 }
 
 function getTraitZh(trait, data) {
@@ -264,7 +198,7 @@ async function openPoseSelectorModal(node, tagsWidget) {
     const COLLECTIONS_COLLAPSE_STORAGE_KEY = "anima-pose-selector-collections-collapsed";
 
     let activeSort = localStorage.getItem(SORT_STORAGE_KEY) || "id-asc";
-    let displayLang = localStorage.getItem(DISPLAY_LANG_STORAGE_KEY) || "bilingual";
+    let displayLang = localStorage.getItem(DISPLAY_LANG_STORAGE_KEY) || "en";
     let currentPage = parseInt(localStorage.getItem(PAGE_STORAGE_KEY), 10) || 1;
     let showSelectedOnly = false;
     let filteredData = [];
@@ -281,7 +215,7 @@ async function openPoseSelectorModal(node, tagsWidget) {
 
     try {
         const saved = JSON.parse(localStorage.getItem(FILTER_STORAGE_KEY) || "{}");
-        if (Array.isArray(saved.categories)) saved.categories.forEach(v => activeFilters.categories.add(v));
+        if (Array.isArray(saved.categories)) saved.categories.forEach(v => activeFilters.categories.add(normalizeCategoryValue(v)));
         if (Array.isArray(saved.traits)) saved.traits.forEach(v => activeFilters.traits.add(v));
         if (saved.collection) activeFilters.collection = saved.collection;
     } catch (e) {
@@ -1408,31 +1342,7 @@ async function openPoseSelectorModal(node, tagsWidget) {
 
     function triggerFilter() {
         const query = searchInput.value.toLowerCase().trim();
-        const aliases = {
-            "举手": ["arms up", "raised arms", "hands above head", "raised"],
-            "抬手": ["arms up", "raised arms", "hand up", "raised"],
-            "叉腰": ["hand on hip", "hands on hips", "akimbo"],
-            "坐姿": ["sitting", "sit", "seiza", "knees"],
-            "坐着": ["sitting", "sit"],
-            "躺姿": ["lying", "on back", "on side"],
-            "躺着": ["lying", "on back", "on side"],
-            "趴着": ["prone", "on stomach", "face down"],
-            "站姿": ["standing", "stand"],
-            "站立": ["standing", "stand"],
-            "蹲姿": ["squatting", "crouching", "kneeling"],
-            "跪姿": ["kneeling", "on knees"],
-            "挥手": ["waving", "wave"],
-            "比心": ["heart hands", "heart gesture"],
-            "胜利": ["peace sign", "v sign", "peace"],
-            "指向": ["pointing", "pointing at viewer"],
-            "持物": ["holding", "carrying", "carry"],
-            "拿着": ["holding", "carrying"],
-            "拥抱": ["hug", "hugging", "cuddle"],
-            "互动": ["duo", "interaction", "hugging"],
-            "整理": ["adjusting", "fixing", "arranging"],
-            "头发": ["hair", "adjusting hair", "hand in hair"],
-            "衣服": ["clothes", "dress", "adjusting clothes"],
-        };
+        const aliases = {};
         let queryList = query ? [query] : [];
         for (const [key, values] of Object.entries(aliases)) {
             if (query.includes(key)) queryList = queryList.concat(values);
@@ -1471,7 +1381,7 @@ async function openPoseSelectorModal(node, tagsWidget) {
 
                 if (activeFilters.categories.size > 0) {
                     const categories = Array.isArray(item.categories) ? item.categories : [];
-                    if (!categories.some(category => activeFilters.categories.has(category))) return false;
+                    if (!categories.some(category => activeFilters.categories.has(normalizeCategoryValue(category)))) return false;
                 }
 
                 if (activeFilters.traits.size > 0) {

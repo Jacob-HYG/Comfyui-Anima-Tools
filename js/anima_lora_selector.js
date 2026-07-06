@@ -16,7 +16,7 @@ app.registerExtension({
                 this._loraData = [];
                 this._dynamicWidgets = [];
 
-                // 同步隐藏并初始化，与其它选择器的同步模式保持 100% 绝对一致
+                // Keep the widget hidden and initialized in sync with other selectors.
                 hideJsonWidgetFully(this);
                 syncLoraWidgets(this, this._loraData);
             };
@@ -1582,14 +1582,14 @@ async function openLoraSelectorModal(node) {
         max-width: 220px;
     `;
     const sortOptions = [
-        { val: "models_v9", label: "相关 / Relevancy" },
-        { val: "models_v9:metrics.thumbsUpCount:desc", label: "评分最高 / Highest Rated" },
-        { val: "models_v9:metrics.downloadCount:desc", label: "下载最多 / Most Downloaded" },
-        { val: "models_v9:metrics.favoriteCount:desc", label: "喜欢最多 / Most Liked" },
-        { val: "models_v9:metrics.commentCount:desc", label: "讨论最多 / Most Discussed" },
-        { val: "models_v9:metrics.collectedCount:desc", label: "收藏最多 / Most Collected" },
-        { val: "models_v9:metrics.tippedAmountCount:desc", label: "打赏最多 / Most Buzz" },
-        { val: "models_v9:createdAt:desc", label: "最新发布 / Newest" }
+        { val: "models_v9", label: "Relevancy" },
+        { val: "models_v9:metrics.thumbsUpCount:desc", label: "Highest Rated" },
+        { val: "models_v9:metrics.downloadCount:desc", label: "Most Downloaded" },
+        { val: "models_v9:metrics.favoriteCount:desc", label: "Most Liked" },
+        { val: "models_v9:metrics.commentCount:desc", label: "Most Discussed" },
+        { val: "models_v9:metrics.collectedCount:desc", label: "Most Collected" },
+        { val: "models_v9:metrics.tippedAmountCount:desc", label: "Most Buzz" },
+        { val: "models_v9:createdAt:desc", label: "Newest" }
     ];
     sortOptions.forEach(opt => {
         const o = document.createElement("option");
@@ -1614,7 +1614,7 @@ async function openLoraSelectorModal(node) {
     const refreshBtn = document.createElement("button");
     refreshBtn.className = "anima-btn-secondary";
     refreshBtn.innerText = t("Refresh");
-    refreshBtn.title = t("Force Refresh / 强制刷新");
+    refreshBtn.title = t("Force Refresh");
     refreshBtn.style.cssText = `
         padding: 8px 12px;
         border-radius: 10px;
@@ -1639,7 +1639,7 @@ async function openLoraSelectorModal(node) {
     const clearCacheBtn = document.createElement("button");
     clearCacheBtn.className = "anima-btn-secondary";
     clearCacheBtn.innerText = t("Clear Cache");
-    clearCacheBtn.title = t("Clear Cache / 清除本地缓存");
+    clearCacheBtn.title = t("Clear Cache");
     clearCacheBtn.style.cssText = `
         padding: 8px 12px;
         border-radius: 10px;
@@ -1679,7 +1679,7 @@ async function openLoraSelectorModal(node) {
     settingsBtn.innerHTML = "⚙️";
     settingsBtn.className = "anima-btn-secondary";
     settingsBtn.style.padding = "10px";
-    settingsBtn.title = "Settings / 设置";
+    settingsBtn.title = "Settings";
     settingsBtn.onclick = () => openSettingsModal();
 
     actionRow.appendChild(createPromoLinks({ accentColor: "#0b8ce9" }));
@@ -1718,37 +1718,37 @@ async function openLoraSelectorModal(node) {
 
     const categoryGroups = [
         {
-            title: "浏览 / Browse",
+            title: "Browse",
             items: [
-                { id: "all", label: "全部 / All", category: "", special: true }
+                { id: "all", label: "All", category: "", special: true }
             ]
         },
         {
-            title: "分类 / Category",
+            title: "Category",
             items: [
-                { id: "action", label: "动作 / Action", category: "action" },
-                { id: "animal", label: "动物 / Animal", category: "animal" },
-                { id: "assets", label: "素材 / Assets", category: "assets" },
-                { id: "background", label: "背景 / Background", category: "background" },
-                { id: "base model", label: "基础模型 / Base Model", category: "base model" },
-                { id: "buildings", label: "建筑 / Buildings", category: "buildings" },
-                { id: "celebrity", label: "名人 / Celebrity", category: "celebrity" },
-                { id: "character", label: "角色 / Character", category: "character" },
-                { id: "clothing", label: "服装 / Clothing", category: "clothing" },
-                { id: "concept", label: "概念 / Concept", category: "concept" },
-                { id: "objects", label: "物品 / Objects", category: "objects" },
-                { id: "poses", label: "姿势 / Poses", category: "poses" },
-                { id: "style", label: "风格 / Style", category: "style" },
-                { id: "tool", label: "工具 / Tool", category: "tool" },
-                { id: "vehicle", label: "载具 / Vehicle", category: "vehicle" }
+                { id: "action", label: "Action", category: "action" },
+                { id: "animal", label: "Animal", category: "animal" },
+                { id: "assets", label: "Assets", category: "assets" },
+                { id: "background", label: "Background", category: "background" },
+                { id: "base model", label: "Base Model", category: "base model" },
+                { id: "buildings", label: "Buildings", category: "buildings" },
+                { id: "celebrity", label: "Celebrity", category: "celebrity" },
+                { id: "character", label: "Character", category: "character" },
+                { id: "clothing", label: "Clothing", category: "clothing" },
+                { id: "concept", label: "Concept", category: "concept" },
+                { id: "objects", label: "Objects", category: "objects" },
+                { id: "poses", label: "Poses", category: "poses" },
+                { id: "style", label: "Style", category: "style" },
+                { id: "tool", label: "Tool", category: "tool" },
+                { id: "vehicle", label: "Vehicle", category: "vehicle" }
             ]
         },
         {
-            title: "本地 / Local",
+            title: "Local",
             items: [
-                { id: "downloaded", label: "已下载 / Downloaded", special: true },
-                { id: "loaded", label: "已加载 / Loaded", special: true },
-                { id: "favorites", label: "收藏 / Favorites", special: true }
+                { id: "downloaded", label: "Downloaded", special: true },
+                { id: "loaded", label: "Loaded", special: true },
+                { id: "favorites", label: "Favorites", special: true }
             ]
         }
     ];
@@ -1844,7 +1844,7 @@ async function openLoraSelectorModal(node) {
     pagButtons.className = "anima-lora-pagination-controls";
 
     const prevBtn = document.createElement("button");
-    prevBtn.innerText = "上一页";
+    prevBtn.innerText = t("Previous");
     prevBtn.className = "anima-lora-pagination-btn";
     prevBtn.disabled = true;
     prevBtn.onclick = () => {
@@ -2242,7 +2242,7 @@ async function openLoraSelectorModal(node) {
                         mediaElement.src = previewUrl;
                     }, index);
                 } else if (isImageLoaded(previewUrl)) {
-                    // 缓存命中：浏览器 HTTP 缓存会瞬间返回，跳过 spinner 直接显示
+                    // Cache hits return immediately through the browser HTTP cache, so skip the spinner.
                     mediaElement.src = previewUrl;
                     mediaElement.style.opacity = "1";
                 } else {
@@ -2620,7 +2620,7 @@ async function openLoraSelectorModal(node) {
         if (isCivitaiModel) {
             titleText.href = `https://civitai.com/models/${modelId}`;
             titleText.target = "_blank";
-            titleText.title = "View on Civitai / 在 C 站查看";
+            titleText.title = "View on Civitai";
             titleText.style.cssText = "font-size: 16px; font-weight: 700; color: #fff; line-height: 1.3; text-decoration: none; display: inline-flex; align-items: center; transition: color 0.2s;";
             
             // Add SVG external link icon
@@ -2654,7 +2654,7 @@ async function openLoraSelectorModal(node) {
         verContainer.style.cssText = "display: flex; flex-direction: column; gap: 6px;";
         
         const verLabel = document.createElement("div");
-        verLabel.innerText = "Versions / 模型版本:";
+        verLabel.innerText = "Versions:";
         verLabel.style.cssText = "font-size: 11px; color: #9ca3af; font-weight: 600;";
         
         const verSelect = document.createElement("select");
@@ -2753,7 +2753,7 @@ async function openLoraSelectorModal(node) {
         triggerContainer.style.cssText = "display: flex; flex-direction: column; gap: 6px;";
         
         const triggerLabel = document.createElement("div");
-        triggerLabel.innerText = "Trigger Words / 触发词:";
+        triggerLabel.innerText = "Trigger Words:";
         triggerLabel.style.cssText = "font-size: 11px; color: #9ca3af; font-weight: 600;";
         triggerContainer.appendChild(triggerLabel);
 
@@ -2767,15 +2767,15 @@ async function openLoraSelectorModal(node) {
                 tag.title = "Click to copy";
                 tag.onclick = () => {
                     copyTextToClipboard(word)
-                        .then(() => showCopyFeedback(`已复制: ${word}`))
-                        .catch(() => showCopyFeedback("复制失败"));
+                        .then(() => showCopyFeedback(`Copied: ${word}`))
+                        .catch(() => showCopyFeedback("Copy failed"));
                 };
                 listDiv.appendChild(tag);
             });
             triggerContainer.appendChild(listDiv);
         } else {
             const noneDiv = document.createElement("div");
-            noneDiv.innerText = "None / 无需触发词";
+            noneDiv.innerText = "None";
             noneDiv.style.cssText = "font-size: 12px; color: #666; font-style: italic;";
             triggerContainer.appendChild(noneDiv);
         }
@@ -2785,7 +2785,7 @@ async function openLoraSelectorModal(node) {
         descContainer.style.cssText = "display: flex; flex-direction: column; gap: 6px; flex: 1 0 170px; min-height: 160px;";
         
         const descLabel = document.createElement("div");
-        descLabel.innerText = "Description / 模型介绍:";
+        descLabel.innerText = "Description:";
         descLabel.style.cssText = "font-size: 11px; color: #9ca3af; font-weight: 600; flex-shrink: 0;";
         
         const descBody = document.createElement("div");
@@ -2832,12 +2832,12 @@ async function openLoraSelectorModal(node) {
             empty.style.cssText = "grid-column: 1/-1; text-align: center; color: #9ca3af; padding: 48px 24px; line-height: 1.7; display: flex; flex-direction: column; gap: 8px; align-items: center;";
             const title = document.createElement("div");
             title.style.cssText = "font-size: 14px; font-weight: 700; color: #e5e7eb;";
-            title.innerText = !configuredDir ? "请先设置 Anima LoRA 存放位置" : "Anima LoRA 存放位置不存在";
+            title.innerText = !configuredDir ? "Set the Anima LoRA directory first" : "The Anima LoRA directory does not exist";
             const body = document.createElement("div");
             body.style.cssText = "font-size: 12px; max-width: 460px;";
             body.innerText = !configuredDir
-                ? "已下载标签页只显示用户设置目录中的 LoRA。请点击右上角设置，填写 Anima LoRA 存放位置。"
-                : "当前设置的目录无法访问。请点击右上角设置，重新填写有效的 Anima LoRA 存放位置。";
+                ? "The Downloaded tab only shows LoRAs in your configured directory. Open settings in the top-right corner and set the Anima LoRA directory."
+                : "The configured directory cannot be accessed. Open settings in the top-right corner and choose a valid Anima LoRA directory.";
             empty.appendChild(title);
             empty.appendChild(body);
             if (configuredDir) {
@@ -2847,7 +2847,7 @@ async function openLoraSelectorModal(node) {
                 empty.appendChild(pathHint);
             }
             gridContainer.appendChild(empty);
-            infoText.innerText = !configuredDir ? "请设置 Anima LoRA 存放位置。" : "Anima LoRA 存放位置无效。";
+            infoText.innerText = !configuredDir ? "Set the Anima LoRA directory." : "The Anima LoRA directory is invalid.";
             return;
         }
 
@@ -2866,14 +2866,14 @@ async function openLoraSelectorModal(node) {
         });
 
         if (downloadedItems.length === 0) {
-            gridContainer.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: #9ca3af; padding: 40px;">该目录下还没有已下载的 LoRA</div>`;
-            infoText.innerText = "当前 Anima LoRA 目录为空。";
+            gridContainer.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: #9ca3af; padding: 40px;">No downloaded LoRA files in this directory</div>`;
+            infoText.innerText = "The current Anima LoRA directory is empty.";
             return;
         }
 
         if (filteredItems.length === 0) {
-            gridContainer.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: #9ca3af; padding: 40px;">没有匹配当前搜索的已下载 LoRA</div>`;
-            infoText.innerText = "没有匹配当前搜索的本地模型。";
+            gridContainer.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: #9ca3af; padding: 40px;">No downloaded LoRA matches the current search</div>`;
+            infoText.innerText = "No local model matches the current search.";
             return;
         }
 
@@ -2969,7 +2969,7 @@ async function openLoraSelectorModal(node) {
             // Card delete button
             const deleteBtn = document.createElement("button");
             deleteBtn.innerHTML = "🗑️";
-            deleteBtn.title = t("Delete Model / 删除模型");
+            deleteBtn.title = t("Delete Model");
             deleteBtn.style.cssText = `
                 position: absolute;
                 top: 8px;
@@ -3004,7 +3004,7 @@ async function openLoraSelectorModal(node) {
             deleteBtn.onclick = async (e) => {
                 e.stopPropagation();
                 const confirmed = confirm(
-                    t("Are you sure you want to delete this model and its metadata? This action CANNOT be undone.\n确认要从磁盘中永久删除此模型及所有伴随文件吗？此操作不可撤销。")
+                    t("Are you sure you want to delete this model and its metadata? This action CANNOT be undone.")
                 );
                 
                 if (!confirmed) return;
@@ -3198,14 +3198,14 @@ async function openLoraSelectorModal(node) {
         });
 
         if (loadedItems.length === 0) {
-            gridContainer.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: #9ca3af; padding: 40px;">当前节点还没有已加载的 LoRA</div>`;
-            infoText.innerText = "当前节点未加载 LoRA。";
+            gridContainer.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: #9ca3af; padding: 40px;">No LoRA is loaded on the current node</div>`;
+            infoText.innerText = "The current node has no loaded LoRA.";
             return;
         }
 
         if (filteredItems.length === 0) {
-            gridContainer.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: #9ca3af; padding: 40px;">没有匹配当前搜索的已加载 LoRA</div>`;
-            infoText.innerText = "没有匹配当前搜索的已加载 LoRA。";
+            gridContainer.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: #9ca3af; padding: 40px;">No loaded LoRA matches the current search</div>`;
+            infoText.innerText = "No loaded LoRA matches the current search.";
             return;
         }
 
@@ -3276,7 +3276,7 @@ async function openLoraSelectorModal(node) {
 
             const removeBtn = document.createElement("button");
             removeBtn.innerText = "×";
-            removeBtn.title = "从当前节点移除";
+            removeBtn.title = "Remove from current node";
             removeBtn.style.cssText = `
                 position: absolute;
                 top: 8px;
@@ -3535,7 +3535,7 @@ async function openLoraSelectorModal(node) {
                     if (shouldNotify && isApiKeyError) {
                         if (!civitaiApiKeyDownloadWarningShown) {
                             civitaiApiKeyDownloadWarningShown = true;
-                            alert(`【下载失败】此模型需要 Civitai API Key 才能下载。\n请点击界面右上角的 ⚙️ (齿轮) 按钮配置你的 API Key 后再试。`);
+                            alert("Download failed. This model requires a Civitai API key.\nOpen settings from the top-right button, configure your API key, and try again.");
                         }
                     } else if (shouldNotify) {
                         alert(`Download failed for model version ${task_id}. Error: ${job.error}`);
@@ -3549,7 +3549,7 @@ async function openLoraSelectorModal(node) {
                 await refreshManifest();
             }
 
-            // 只在下载完成/失败等状态变更时才重建 grid，正在下载中只更新进度条
+            // Rebuild the grid only when a download finishes or fails; active downloads only update progress.
             if (needGridRebuild) {
                 if (currentCategory === "downloaded") {
                     renderDownloadedOnly();
@@ -3566,7 +3566,7 @@ async function openLoraSelectorModal(node) {
                     renderModelDetail();
                 }
             } else if (selectedVersion && activeDownloads[selectedVersion.id] && ["pending", "downloading"].includes(activeDownloads[selectedVersion.id].status)) {
-                // 仅更新详情面板的按钮状态文字
+                // Only update the detail panel button state text.
                 const actionBtn = detailPanel.querySelector(".anima-btn-primary");
                 if (actionBtn) {
                     const job = activeDownloads[selectedVersion.id];

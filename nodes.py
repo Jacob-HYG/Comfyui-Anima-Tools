@@ -1191,6 +1191,7 @@ import time
 import urllib.parse
 import urllib.request
 from io import BytesIO
+from pathlib import Path
 try:
     from PIL import Image
 except ImportError:
@@ -1406,27 +1407,27 @@ FAVORITE_SECTIONS = ["artist", "character", "lora", "clothing", "background", "p
 def get_default_favorites_data():
     return {
         "artist": {
-            "groups": [{"id": "default", "name": "默认收藏", "isSystem": True}],
+            "groups": [{"id": "default", "name": "Default Favorites", "isSystem": True}],
             "items": []
         },
         "character": {
-            "groups": [{"id": "default", "name": "默认收藏", "isSystem": True}],
+            "groups": [{"id": "default", "name": "Default Favorites", "isSystem": True}],
             "items": []
         },
         "lora": {
-            "groups": [{"id": "default", "name": "默认收藏", "isSystem": True}],
+            "groups": [{"id": "default", "name": "Default Favorites", "isSystem": True}],
             "items": []
         },
         "clothing": {
-            "groups": [{"id": "default", "name": "默认收藏", "isSystem": True}],
+            "groups": [{"id": "default", "name": "Default Favorites", "isSystem": True}],
             "items": []
         },
         "background": {
-            "groups": [{"id": "default", "name": "默认收藏", "isSystem": True}],
+            "groups": [{"id": "default", "name": "Default Favorites", "isSystem": True}],
             "items": []
         },
         "pose": {
-            "groups": [{"id": "default", "name": "默认收藏", "isSystem": True}],
+            "groups": [{"id": "default", "name": "Default Favorites", "isSystem": True}],
             "items": []
         }
     }
@@ -1445,6 +1446,10 @@ def normalize_favorites_data(data):
             groups = default_data[key]["groups"].copy()
         elif not any(isinstance(g, dict) and g.get("id") == "default" for g in groups):
             groups = [default_data[key]["groups"][0], *groups]
+        for group in groups:
+            if isinstance(group, dict) and group.get("id") == "default" and group.get("isSystem", True):
+                group["name"] = "Default Favorites"
+                group["isSystem"] = True
         items = section.get("items")
         if not isinstance(items, list):
             items = []
@@ -1689,6 +1694,82 @@ def get_lora_root_infos() -> list[dict]:
 def get_lora_roots() -> list[str]:
     return [root_info["path"] for root_info in get_lora_root_infos()]
 
+def normalize_lora_filename(filename: str) -> str | None:
+    filename = str(filename or "").replace("\\", "/").strip()
+    if not filename or filename.endswith("/"):
+        return None
+    if os.path.isabs(filename) or Path(filename).is_absolute():
+        return None
+    parts = [part for part in filename.split("/") if part]
+    if any(part in (".", "..") for part in parts):
+        return None
+    return "/".join(parts)
+
+def is_relative_to_path(candidate: Path, root: Path) -> bool:
+    try:
+        candidate.relative_to(root)
+        return True
+    except ValueError:
+        try:
+            candidate_key = os.path.normcase(os.path.abspath(str(candidate)))
+            root_key = os.path.normcase(os.path.abspath(str(root)))
+            return os.path.commonpath([candidate_key, root_key]) == root_key
+        except ValueError:
+            return False
+
+def resolve_lora_root(root: str) -> Path | None:
+    try:
+        root_path = Path(root).expanduser().resolve()
+        if root_path.is_dir():
+            return root_path
+    except (OSError, RuntimeError):
+        return None
+    return None
+
+def resolve_lora_candidate_under_root(root: str, filename: str) -> str | None:
+    root_path = resolve_lora_root(root)
+    if root_path is None:
+        return None
+    try:
+        candidate = (root_path / filename.replace("/", os.sep)).resolve()
+    except (OSError, RuntimeError):
+        return None
+    if not is_relative_to_path(candidate, root_path):
+        return None
+    if candidate.exists():
+        return str(candidate)
+    return None
+
+def is_lora_path_contained(path: str) -> bool:
+    if not path:
+        return False
+    try:
+        candidate = Path(path).resolve()
+    except (OSError, RuntimeError):
+        return False
+    for root in get_lora_roots():
+        root_path = resolve_lora_root(root)
+        if root_path is not None and is_relative_to_path(candidate, root_path):
+            return True
+    return False
+
+def resolve_lora_companion_path(abs_path: str, extension: str, suffix: str = "", must_exist: bool = True) -> str | None:
+    if not abs_path or not extension.startswith("."):
+        return None
+    base_no_ext = os.path.splitext(abs_path)[0]
+    candidate = base_no_ext + suffix + extension
+    if must_exist and not os.path.exists(candidate):
+        return None
+    try:
+        resolved = Path(candidate).resolve()
+    except (OSError, RuntimeError):
+        return None
+    if not is_lora_path_contained(str(resolved)):
+        return None
+    if must_exist and not resolved.exists():
+        return None
+    return str(resolved)
+
 def scan_loras_with_info() -> list[dict]:
     results = []
     seen = set()
@@ -1706,16 +1787,14 @@ def scan_loras_with_info() -> list[dict]:
     return results
 
 def resolve_lora_abs_path(filename: str) -> str | None:
+    filename = normalize_lora_filename(filename)
     if not filename:
-        return None
-    filename = filename.replace("\\", "/").strip()
-    if not filename or filename.endswith("/"):
         return None
 
     _, custom_dir_valid, custom_dir_abs = get_custom_lora_dir_status()
     if custom_dir_valid:
-        candidate = os.path.join(custom_dir_abs, filename.replace("/", os.sep))
-        if os.path.exists(candidate):
+        candidate = resolve_lora_candidate_under_root(custom_dir_abs, filename)
+        if candidate:
             return candidate
 
     try:
@@ -1723,23 +1802,22 @@ def resolve_lora_abs_path(filename: str) -> str | None:
     except Exception:
         abs_path = None
 
-    if abs_path and os.path.exists(abs_path):
-        return abs_path
+    if abs_path and os.path.exists(abs_path) and is_lora_path_contained(abs_path):
+        return str(Path(abs_path).resolve())
 
     for root in get_lora_roots():
-        candidate = os.path.join(root, filename.replace("/", os.sep))
-        if os.path.exists(candidate):
+        candidate = resolve_lora_candidate_under_root(root, filename)
+        if candidate:
             return candidate
     return None
 
 def find_companion_preview(abs_path: str) -> str | None:
     if not abs_path:
         return None
-    base_no_ext = os.path.splitext(abs_path)[0]
     for ext in [".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm"]:
         for suffix in ["", ".preview"]:
-            preview_file = base_no_ext + suffix + ext
-            if os.path.exists(preview_file):
+            preview_file = resolve_lora_companion_path(abs_path, ext, suffix=suffix, must_exist=True)
+            if preview_file:
                 return preview_file
     return None
 
@@ -1759,8 +1837,8 @@ def make_display_name(filename: str) -> str:
     return name
 
 def read_lora_meta_summary(abs_path: str) -> tuple[str, dict]:
-    meta_path = os.path.splitext(abs_path)[0] + ".json"
-    if not os.path.exists(meta_path):
+    meta_path = resolve_lora_companion_path(abs_path, ".json", must_exist=True)
+    if not meta_path:
         return "missing", {}
     try:
         with open(meta_path, "r", encoding="utf-8") as f:
@@ -1928,8 +2006,9 @@ async def lora_local_metadata_api(request):
         filename = request.query.get("filename", "")
         if not filename:
             return web.json_response({"success": False, "error": "Missing filename"}, status=400)
-            
-        filename = filename.replace("\\", "/")
+        filename = normalize_lora_filename(filename)
+        if not filename:
+            return web.json_response({"success": False, "error": "Invalid filename"}, status=400)
         
         # Try metadata cache first
         if filename in _LOCAL_METADATA_CACHE:
@@ -1938,7 +2017,9 @@ async def lora_local_metadata_api(request):
         abs_path = resolve_lora_abs_path(filename)
             
         if abs_path and os.path.exists(abs_path):
-            meta_path = os.path.splitext(abs_path)[0] + ".json"
+            meta_path = resolve_lora_companion_path(abs_path, ".json", must_exist=False)
+            if not meta_path:
+                return web.json_response({"success": False, "error": "Invalid metadata path"}, status=403)
             
             # 1. 优先读取已存在的本地 JSON 配置文件（支持旧版格式自动升级与自愈）
             if os.path.exists(meta_path):
@@ -2016,8 +2097,8 @@ async def lora_local_metadata_api(request):
                             elif ".webp" in preview_url.lower():
                                 preview_ext = ".webp"
                             
-                            preview_path = os.path.splitext(abs_path)[0] + preview_ext
-                            if not os.path.exists(preview_path):
+                            preview_path = resolve_lora_companion_path(abs_path, preview_ext, must_exist=False)
+                            if preview_path and not os.path.exists(preview_path):
                                 # 后台多线程异步下载图片，防止阻塞 metadata 请求
                                 threading.Thread(
                                     target=download_preview_image,
@@ -2078,7 +2159,9 @@ def _ensure_local_preview_download_async(abs_path: str, image_url: str, delay: f
     global _LOCAL_PREVIEW_DOWNLOAD_WORKER_ACTIVE
     if not abs_path or not image_url or not image_url.lower().startswith(("http://", "https://")):
         return
-    preview_path = os.path.splitext(abs_path)[0] + _preview_extension_from_url(image_url)
+    preview_path = resolve_lora_companion_path(abs_path, _preview_extension_from_url(image_url), must_exist=False)
+    if not preview_path:
+        return
     if os.path.exists(preview_path):
         return
     job_key = f"{preview_path}:{image_url}"
@@ -2442,7 +2525,9 @@ async def lora_local_preview_api(request):
         except (ValueError, TypeError):
             target_width = 0
             
-        filename = filename.replace("\\", "/")
+        filename = normalize_lora_filename(filename)
+        if not filename:
+            return web.Response(status=400)
         abs_path = resolve_lora_abs_path(filename)
             
         if abs_path and os.path.exists(abs_path):
@@ -2563,7 +2648,9 @@ def delete_local_lora_files(filename: str) -> bool:
     """Helper to delete a local LoRA model and its companion meta files."""
     try:
         # 统一将反斜杠替换为正斜杠，防止 Windows 路径转义解析错误
-        filename = filename.replace("\\", "/")
+        filename = normalize_lora_filename(filename)
+        if not filename:
+            return False
         
         # Invalidate metadata cache
         _LOCAL_METADATA_CACHE.pop(filename, None)
@@ -2573,18 +2660,19 @@ def delete_local_lora_files(filename: str) -> bool:
         if not abs_path:
             return False
             
-        abs_path = os.path.normpath(abs_path)
+        abs_path = str(Path(abs_path).resolve())
+        if not is_lora_path_contained(abs_path):
+            return False
         
         if not os.path.exists(abs_path):
             # 如果主模型文件都不存在，我们也尝试看看有没有残留的伴随文件
             print(f"[Anima Tools] Model file {abs_path} not found, checking companion files...")
             
         # 1. 尝试删除 companion JSON metadata
-        base_no_ext = os.path.splitext(abs_path)[0]
-        meta_file = base_no_ext + ".json"
+        meta_file = resolve_lora_companion_path(abs_path, ".json", must_exist=True)
         deleted_any = False
         
-        if os.path.exists(meta_file):
+        if meta_file:
             try:
                 os.remove(meta_file)
                 print(f"[Anima Tools] Successfully deleted companion meta JSON: {meta_file}")
@@ -2596,8 +2684,8 @@ def delete_local_lora_files(filename: str) -> bool:
         preview_extensions = [".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm"]
         for ext in preview_extensions:
             for suffix in ["", ".preview"]:
-                preview_file = base_no_ext + suffix + ext
-                if os.path.exists(preview_file):
+                preview_file = resolve_lora_companion_path(abs_path, ext, suffix=suffix, must_exist=True)
+                if preview_file:
                     try:
                         os.remove(preview_file)
                         print(f"[Anima Tools] Successfully deleted preview image: {preview_file}")
@@ -2607,7 +2695,7 @@ def delete_local_lora_files(filename: str) -> bool:
                     
         # 3. 尝试删除主模型文件
         model_deleted = False
-        if os.path.exists(abs_path):
+        if os.path.exists(abs_path) and is_lora_path_contained(abs_path):
             try:
                 os.remove(abs_path)
                 print(f"[Anima Tools] Successfully deleted main model file: {abs_path}")
