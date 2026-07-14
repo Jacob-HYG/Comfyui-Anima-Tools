@@ -2,13 +2,13 @@ import { app } from "../../scripts/app.js";
 import { t } from "./i18n.js";
 import { markImageLoaded, isImageLoaded } from "./anima_image_utils.js";
 import { createPromoLinks } from "./anima_promo_links.js";
-import { addSelectorActionRow, installSelectorExecutionSync } from "./anima_selector_random.js";
+import { addSelectorActionRow, installSelectorExecutionSync, isAnimaPromptPlusNode } from "./anima_selector_random.js";
 
 app.registerExtension({
     name: "AnimaArtistTagSelector.extension",
 
     async beforeRegisterNodeDef(nodeType, nodeData, app) {
-        if (nodeData.name === "AnimaArtistTagSelector" || nodeData.name === "AnimaArtistTagSelectorPlus" || nodeData.name === "AnimaPromptPlus") {
+        if (nodeData.name === "AnimaArtistTagSelector" || nodeData.name === "AnimaArtistTagSelectorPlus" || isAnimaPromptPlusNode(nodeData.name)) {
             installSelectorExecutionSync(nodeType);
             const origOnCreated = nodeType.prototype.onNodeCreated;
             nodeType.prototype.onNodeCreated = function () {

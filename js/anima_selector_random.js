@@ -1,6 +1,14 @@
 import { t } from "./i18n.js";
 
 export const SELECTOR_RANDOM_PROPERTY = "anima_selector_random";
+export const ANIMA_PROMPT_PLUS_NODE_NAMES = new Set([
+    "AnimaPromptPlus",
+    "AnimaPromptPlusClipEncode",
+]);
+
+export function isAnimaPromptPlusNode(nodeName) {
+    return ANIMA_PROMPT_PLUS_NODE_NAMES.has(nodeName);
+}
 
 function getRandomState(node) {
     node.properties = node.properties || {};
@@ -57,6 +65,14 @@ function setWidgetValue(node, name, value) {
     widget.callback?.(text);
 }
 
+export function applySelectorWidgetValues(node, values) {
+    if (!node || !values || typeof values !== "object") return;
+    for (const [name, value] of Object.entries(values)) {
+        setWidgetValue(node, name, value);
+    }
+    refreshNode(node);
+}
+
 function extractSelectorTagsPayload(message) {
     const candidates = [
         message?.anima_selector_tags,
@@ -77,10 +93,7 @@ function extractSelectorTagsPayload(message) {
 function syncSelectorTagsFromExecution(node, message) {
     const payload = extractSelectorTagsPayload(message);
     if (!payload) return;
-    for (const [name, value] of Object.entries(payload)) {
-        setWidgetValue(node, name, value);
-    }
-    refreshNode(node);
+    applySelectorWidgetValues(node, payload);
 }
 
 export function installSelectorExecutionSync(nodeType) {

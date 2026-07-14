@@ -2,7 +2,7 @@ import { app } from "../../scripts/app.js";
 import { t } from "./i18n.js";
 import { markImageLoaded, isImageLoaded } from "./anima_image_utils.js";
 import { createPromoLinks } from "./anima_promo_links.js";
-import { addSelectorActionRow, installSelectorExecutionSync } from "./anima_selector_random.js";
+import { addSelectorActionRow, installSelectorExecutionSync, isAnimaPromptPlusNode } from "./anima_selector_random.js";
 import {
     copyText,
     createEl,
@@ -41,7 +41,7 @@ app.registerExtension({
     name: "AnimaPoseTagSelector.extension",
 
     async beforeRegisterNodeDef(nodeType, nodeData) {
-        if (nodeData.name === "AnimaPoseTagSelector" || nodeData.name === "AnimaPoseTagSelectorPlus" || nodeData.name === "AnimaPromptPlus") {
+        if (nodeData.name === "AnimaPoseTagSelector" || nodeData.name === "AnimaPoseTagSelectorPlus" || isAnimaPromptPlusNode(nodeData.name)) {
             installSelectorExecutionSync(nodeType);
             const origOnCreated = nodeType.prototype.onNodeCreated;
             nodeType.prototype.onNodeCreated = function () {

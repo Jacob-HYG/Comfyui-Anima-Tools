@@ -570,6 +570,43 @@ class AnimaPromptPlus:
                 tokens.append(f"@{clean}")
         return tokens
 
+    def _selector_tags(self, artist_tags, character_tags, clothing_tags, pose_tags, background_tags):
+        return {
+            "artist_tags": artist_tags,
+            "character_tags": character_tags,
+            "clothing_tags": clothing_tags,
+            "pose_tags": pose_tags,
+            "background_tags": background_tags,
+        }
+
+    def _compose_prompt_text(
+        self,
+        quality_prompt,
+        artist_tags,
+        character_tags,
+        clothing_tags,
+        pose_tags,
+        background_tags,
+        extra_prompt,
+        separator=", ",
+    ):
+        parts = []
+        parts.extend(self._split_prompt_tokens(quality_prompt))
+        parts.extend(self._artist_tokens(artist_tags))
+        parts.extend(self._split_prompt_tokens(character_tags))
+        parts.extend(self._split_prompt_tokens(clothing_tags))
+        parts.extend(self._split_prompt_tokens(pose_tags))
+        parts.extend(self._split_prompt_tokens(background_tags))
+        parts.extend(self._split_prompt_tokens(extra_prompt))
+
+        if not parts:
+            return ""
+
+        sep = separator if separator is not None else ", "
+        if sep.strip() == "" or sep.strip() == ",":
+            return f"{', '.join(parts)}, "
+        return sep.join(parts)
+
     def compose_prompt(
         self,
         quality_prompt,
@@ -581,29 +618,98 @@ class AnimaPromptPlus:
         extra_prompt,
         separator=", ",
     ):
-        selector_tags = {
-            "artist_tags": artist_tags,
-            "character_tags": character_tags,
-            "clothing_tags": clothing_tags,
-            "pose_tags": pose_tags,
-            "background_tags": background_tags,
+        selector_tags = self._selector_tags(
+            artist_tags,
+            character_tags,
+            clothing_tags,
+            pose_tags,
+            background_tags,
+        )
+        text = self._compose_prompt_text(
+            quality_prompt,
+            artist_tags,
+            character_tags,
+            clothing_tags,
+            pose_tags,
+            background_tags,
+            extra_prompt,
+            separator,
+        )
+        return _anima_selector_tags_result(selector_tags, text)
+
+
+class AnimaPromptPlusClipEncode(AnimaPromptPlus):
+    @classmethod
+    def INPUT_TYPES(cls):
+        prompt_inputs = super().INPUT_TYPES()["required"]
+        return {
+            "required": {
+                "clip": ("CLIP",),
+                **prompt_inputs,
+            },
+            "hidden": {
+                "extra_pnginfo": "EXTRA_PNGINFO",
+                "unique_id": "UNIQUE_ID",
+            },
         }
-        parts = []
-        parts.extend(self._split_prompt_tokens(quality_prompt))
-        parts.extend(self._artist_tokens(artist_tags))
-        parts.extend(self._split_prompt_tokens(character_tags))
-        parts.extend(self._split_prompt_tokens(clothing_tags))
-        parts.extend(self._split_prompt_tokens(pose_tags))
-        parts.extend(self._split_prompt_tokens(background_tags))
-        parts.extend(self._split_prompt_tokens(extra_prompt))
 
-        if not parts:
-            return _anima_selector_tags_result(selector_tags, "")
+    RETURN_TYPES = ("CONDITIONING", "STRING")
+    RETURN_NAMES = ("positive", "text")
+    FUNCTION = "encode_prompt"
+    CATEGORY = "AnimaArt"
 
-        sep = separator if separator is not None else ", "
-        if sep.strip() == "" or sep.strip() == ",":
-            return _anima_selector_tags_result(selector_tags, f"{', '.join(parts)}, ")
-        return _anima_selector_tags_result(selector_tags, sep.join(parts))
+    def _record_prompt_metadata(self, extra_pnginfo, unique_id, text):
+        if not isinstance(extra_pnginfo, dict):
+            return
+        records = extra_pnginfo.setdefault("anima_prompt", {})
+        if not isinstance(records, dict):
+            records = {}
+            extra_pnginfo["anima_prompt"] = records
+        records[str(unique_id or "prompt")] = {"positive": text}
+
+    def encode_prompt(
+        self,
+        clip,
+        quality_prompt,
+        artist_tags,
+        character_tags,
+        clothing_tags,
+        pose_tags,
+        background_tags,
+        extra_prompt,
+        separator=", ",
+        extra_pnginfo=None,
+        unique_id=None,
+    ):
+        if clip is None:
+            raise RuntimeError(
+                "ERROR: clip input is invalid: None\n\n"
+                "Connect a valid CLIP output from a checkpoint or text encoder loader."
+            )
+
+        selector_tags = self._selector_tags(
+            artist_tags,
+            character_tags,
+            clothing_tags,
+            pose_tags,
+            background_tags,
+        )
+        resolved_text = self._compose_prompt_text(
+            quality_prompt,
+            artist_tags,
+            character_tags,
+            clothing_tags,
+            pose_tags,
+            background_tags,
+            extra_prompt,
+            separator,
+        )
+        conditioning = clip.encode_from_tokens_scheduled(clip.tokenize(resolved_text))
+        self._record_prompt_metadata(extra_pnginfo, unique_id, resolved_text)
+        return {
+            "ui": {"anima_selector_tags": [selector_tags]},
+            "result": (conditioning, resolved_text),
+        }
 
 class AnimaPromptComposer:
     SELECTION_PROPERTY = "anima_prompt_composer_selection"
@@ -1158,6 +1264,7 @@ NODE_CLASS_MAPPINGS = {
     "AnimaPoseTagSelector": AnimaPoseTagSelector,
     "AnimaPoseTagSelectorPlus": AnimaPoseTagSelectorPlus,
     "AnimaPromptPlus": AnimaPromptPlus,
+    "AnimaPromptPlusClipEncode": AnimaPromptPlusClipEncode,
     "AnimaPromptComposer": AnimaPromptComposer,
     "AnimaMultiLoraLoader": AnimaMultiLoraLoader
 }
@@ -1173,7 +1280,8 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "AnimaBackgroundTagSelectorPlus": "Anima Background Tag Selector+",
     "AnimaPoseTagSelector": "Anima Pose Tag Selector",
     "AnimaPoseTagSelectorPlus": "Anima Pose Tag Selector+",
-    "AnimaPromptPlus": "Anima Prompt Plus",
+    "AnimaPromptPlus": "Anima Prompt",
+    "AnimaPromptPlusClipEncode": "Anima Prompt Plus",
     "AnimaPromptComposer": "Anima Prompt Random Draw",
     "AnimaMultiLoraLoader": "Anima Multi LoRA Loader"
 }
@@ -1217,6 +1325,13 @@ SELECTOR_RANDOM_INPUTS = {
         "pose": "pose_tags",
         "background": "background_tags",
     },
+    "AnimaPromptPlusClipEncode": {
+        "artist": "artist_tags",
+        "character": "character_tags",
+        "clothing": "clothing_tags",
+        "pose": "pose_tags",
+        "background": "background_tags",
+    },
 }
 
 SELECTOR_WIDGET_ORDERS = {
@@ -1231,6 +1346,16 @@ SELECTOR_WIDGET_ORDERS = {
     "AnimaPoseTagSelector": ["pose_tags", "mode"],
     "AnimaPoseTagSelectorPlus": ["pose_tags", "extra_text", "separator"],
     "AnimaPromptPlus": [
+        "quality_prompt",
+        "artist_tags",
+        "character_tags",
+        "clothing_tags",
+        "pose_tags",
+        "background_tags",
+        "extra_prompt",
+        "separator",
+    ],
+    "AnimaPromptPlusClipEncode": [
         "quality_prompt",
         "artist_tags",
         "character_tags",
@@ -1336,6 +1461,46 @@ def _resolve_anima_selector_random_nodes(prompt, extra_pnginfo, composer):
             _set_selector_workflow_widget_value(workflow_node, class_type, input_name, text)
             _record_selector_random(extra_pnginfo, node_id, class_type, section, input_name, text, selected)
 
+def _resolve_anima_prompt_plus_clip_nodes(prompt, extra_pnginfo, prompt_plus):
+    updates = {}
+    for node_id, node in list(prompt.items()):
+        if not isinstance(node, dict) or node.get("class_type") != "AnimaPromptPlusClipEncode":
+            continue
+        inputs = node.setdefault("inputs", {})
+        if not isinstance(inputs, dict):
+            continue
+
+        resolved_text = prompt_plus._compose_prompt_text(
+            inputs.get("quality_prompt", ""),
+            inputs.get("artist_tags", ""),
+            inputs.get("character_tags", ""),
+            inputs.get("clothing_tags", ""),
+            inputs.get("pose_tags", ""),
+            inputs.get("background_tags", ""),
+            inputs.get("extra_prompt", ""),
+            inputs.get("separator", ", "),
+        )
+        inputs["text"] = resolved_text
+
+        if isinstance(extra_pnginfo, dict):
+            records = extra_pnginfo.setdefault("anima_prompt", {})
+            if not isinstance(records, dict):
+                records = {}
+                extra_pnginfo["anima_prompt"] = records
+            records[str(node_id)] = {"positive": resolved_text}
+
+        updates[str(node_id)] = {
+            "quality_prompt": inputs.get("quality_prompt", ""),
+            "artist_tags": inputs.get("artist_tags", ""),
+            "character_tags": inputs.get("character_tags", ""),
+            "clothing_tags": inputs.get("clothing_tags", ""),
+            "pose_tags": inputs.get("pose_tags", ""),
+            "background_tags": inputs.get("background_tags", ""),
+            "extra_prompt": inputs.get("extra_prompt", ""),
+            "separator": inputs.get("separator", ", "),
+        }
+    return updates
+
 def _install_anima_prompt_composer_queue_resolver():
     if getattr(PromptServer.instance, "_anima_prompt_composer_resolver_installed", False):
         return
@@ -1356,6 +1521,17 @@ def _install_anima_prompt_composer_queue_resolver():
 
             composer = AnimaPromptComposer()
             _resolve_anima_selector_random_nodes(prompt, extra_pnginfo, composer)
+            prompt_plus_updates = _resolve_anima_prompt_plus_clip_nodes(
+                prompt,
+                extra_pnginfo,
+                AnimaPromptPlus(),
+            )
+            if prompt_plus_updates:
+                PromptServer.instance.send_sync(
+                    "anima.prompt_plus_resolved",
+                    {"nodes": prompt_plus_updates},
+                    json_data.get("client_id"),
+                )
 
             for node_id, node in list(prompt.items()):
                 if not isinstance(node, dict) or node.get("class_type") != "AnimaPromptComposer":
