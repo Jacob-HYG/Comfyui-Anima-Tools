@@ -2,6 +2,7 @@ import { app } from "../../scripts/app.js";
 import { t } from "./i18n.js";
 import { markImageLoaded, isImageLoaded, clearImageLoadedCache } from "./anima_image_utils.js";
 import { createPromoLinks } from "./anima_promo_links.js";
+import { createLoraControlWidget, getAdaptiveLoraName } from "./anima_lora_node_widgets.js";
 
 app.registerExtension({
     name: "AnimaMultiLoraLoader.extension",
@@ -156,46 +157,15 @@ function getJsonWidgetLoraData(node) {
     return parseLoraJsonValue(jsonWidget?.value);
 }
 
-function getLoraBaseName(name) {
-    let displayName = String(name || "");
-    if (displayName.endsWith(".safetensors")) {
-        displayName = displayName.slice(0, -12);
-    }
-    const lastSlash = Math.max(displayName.lastIndexOf("/"), displayName.lastIndexOf("\\"));
-    if (lastSlash !== -1) {
-        displayName = displayName.substring(lastSlash + 1);
-    }
-    return displayName || "LoRA";
-}
-
-function truncateForWidth(text, maxChars) {
-    if (text.length <= maxChars) return text;
-    if (maxChars <= 8) return text.slice(0, Math.max(1, maxChars - 1)) + "...";
-    const head = Math.ceil((maxChars - 3) * 0.68);
-    const tail = Math.max(0, maxChars - 3 - head);
-    return `${text.slice(0, head)}...${tail > 0 ? text.slice(-tail) : ""}`;
-}
-
-function getAdaptiveLoraName(name, nodeWidth) {
-    const fullName = getLoraBaseName(name);
-    const width = Math.max(180, Number(nodeWidth || 240));
-    const maxChars = Math.max(12, Math.floor((width - 70) / 7));
-    return truncateForWidth(fullName, maxChars);
-}
-
-function getDeleteWidgetName(name, nodeWidth) {
-    return `×  ${getAdaptiveLoraName(name, nodeWidth)}`;
-}
-
 function updateLoraWidgetLabels(node) {
     if (!node?.widgets) return;
     const width = node.size ? node.size[0] : 240;
     let changed = false;
     for (const widget of node.widgets) {
-        if (widget?.__animaWidgetType === "delete_lora") {
-            const nextName = getDeleteWidgetName(widget.__animaLoraName, width);
-            if (widget.name !== nextName) {
-                widget.name = nextName;
+        if (widget?.__animaWidgetType === "lora_control") {
+            const nextName = getAdaptiveLoraName(widget.__animaLoraName, width);
+            if (widget.__animaDisplayName !== nextName) {
+                widget.__animaDisplayName = nextName;
                 changed = true;
             }
         }
@@ -251,38 +221,33 @@ function syncLoraWidgets(node, loras) {
         for (let i = 0; i < loras.length; i++) {
             const lora = loras[i];
             if (!lora || !lora.name) continue;
+            let modelSlider = null;
 
-            const delBtn = node.addWidget("button", getDeleteWidgetName(lora.name, currentWidth), null, () => {
-                const nextLoras = node._loraData.filter(x => x.name !== lora.name);
-                node._loraData = nextLoras;
-                updateJsonValue(node);
-                syncLoraWidgets(node, nextLoras);
-            });
-            delBtn.__animaWidgetType = "delete_lora";
-            delBtn.__animaLoraName = lora.name;
-            delBtn.serialize = false;
-            delBtn.computedHeight = 24;
-            if (delBtn.el) {
-                delBtn.el.style.cssText += `
-                    color: #ef4444 !important;
-                    border: 1px solid rgba(239, 68, 68, 0.32) !important;
-                    background: linear-gradient(135deg, rgba(239, 68, 68, 0.12), rgba(127, 29, 29, 0.12)) !important;
-                    border-radius: 7px !important;
-                    font-size: 11px !important;
-                    text-align: left !important;
-                    padding-left: 10px !important;
-                    margin-top: 4px !important;
-                    font-weight: 650 !important;
-                `;
-                delBtn.el.title = `Remove ${lora.name}`;
-            }
-            node._dynamicWidgets.push(delBtn);
+            const controlWidget = node.addCustomWidget(createLoraControlWidget({
+                loraName: lora.name,
+                enabled: lora.enabled,
+                onToggle: (enabled) => {
+                    const currentLora = node._loraData.find(item => item.name === lora.name);
+                    if (currentLora) currentLora.enabled = enabled;
+                    if (modelSlider) modelSlider.disabled = !enabled;
+                    updateJsonValue(node);
+                    syncLoraWidgets(node, node._loraData);
+                },
+                onRemove: () => {
+                    const nextLoras = node._loraData.filter(item => item.name !== lora.name);
+                    node._loraData = nextLoras;
+                    updateJsonValue(node);
+                    syncLoraWidgets(node, nextLoras);
+                },
+            }));
+            controlWidget.__animaDisplayName = getAdaptiveLoraName(lora.name, currentWidth);
+            node._dynamicWidgets.push(controlWidget);
 
             // Use zero-width space (\u200B) repeat sequence as unique suffix to prevent LiteGraph merge,
             // so that the rendered name has absolutely no extra bracket explanation, looking clean.
             const modelWidgetName = "   Strength" + "\u200B".repeat(i);
 
-            const modelSlider = node.addWidget("slider", modelWidgetName, lora.strength_model ?? 1.0, (val) => {
+            modelSlider = node.addWidget("slider", modelWidgetName, lora.strength_model ?? 1.0, (val) => {
                 const nextValue = Number.parseFloat(val);
                 if (!Number.isFinite(nextValue)) return;
                 const roundedValue = Number(nextValue.toFixed(2));
@@ -300,6 +265,7 @@ function syncLoraWidgets(node, loras) {
             modelSlider.__animaLoraName = lora.name;
             modelSlider.serialize = false;
             modelSlider.computedHeight = 18;
+            modelSlider.disabled = lora.enabled === false;
             node._dynamicWidgets.push(modelSlider);
         }
 

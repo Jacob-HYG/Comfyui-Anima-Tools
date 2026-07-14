@@ -197,6 +197,8 @@ Anima-Tools/
 │   ├── anima_clothing_selector.js   # 服装提示词选择器前端核心面板交互逻辑
 │   ├── anima_prompt_composer.js     # 画师、角色、服装随机整合节点预览逻辑
 │   ├── anima_lora_selector.js       # 多 LoRA 搜索、下载、本地预览与缓存面板
+│   ├── anima_lora_node_widgets.js   # LoRA 节点内启用开关、名称与移除控制条
+│   ├── anima_selector_ui.js          # 选择器共享 UI 基础组件、设计令牌与图库样式骨架
 │   ├── anima_image_utils.js         # 共享图片加载缓存工具
 │   ├── anima_promo_links.js         # GitHub 与爱发电跳转入口共享组件
 │   ├── data.js                      # 40,000+ 详尽画师数据库 (含 CDN 映射与独特度评分)
