@@ -2,6 +2,19 @@ import { app } from "../../scripts/app.js";
 import { t } from "./i18n.js";
 import { markImageLoaded, isImageLoaded } from "./anima_image_utils.js";
 import { createPromoLinks } from "./anima_promo_links.js";
+import { addSelectorActionRow, installSelectorExecutionSync, isAnimaPromptPlusNode } from "./anima_selector_random.js";
+import {
+    copyText,
+    createEl,
+    createGallerySelectorStyleSheet,
+    createModalButtons,
+    createModalShell as createSharedModalShell,
+    debounce,
+    escapeHtml,
+    normalizePromptToken,
+    showToast as showSharedToast,
+    splitPromptTokens,
+} from "./anima_selector_ui.js";
 import "./clothing_data.js";
 
 const THEME = {
@@ -12,91 +25,52 @@ const THEME = {
 };
 
 const CATEGORY_LIST = [
-    "礼服/裙装 (Dress & Gown)",
-    "日常/休闲 (Casual & Daily)",
-    "制服/西服 (Uniform & Suit)",
-    "泳装/内衣 (Swimsuit & Lingerie)",
-    "角色扮演/奇幻 (Fantasy & Cosplay)",
-    "性感/暴露 (Revealing)",
+    "Dress & Gown",
+    "Casual & Daily",
+    "Uniform & Suit",
+    "Swimsuit & Lingerie",
+    "Fantasy & Cosplay",
+    "Revealing",
 ];
 
-const TRAITS_TRANSLATION = {
-    "apron": "围裙",
-    "backless": "露背",
-    "bare legs": "光腿",
-    "boots": "靴子",
-    "collar": "衣领",
-    "garter belt": "吊袜带",
-    "glasses": "眼镜",
-    "gloves": "手套",
-    "halterneck": "吊颈式设计",
-    "high heels": "高跟鞋",
-    "kneehighs": "及膝袜",
-    "lace": "蕾丝",
-    "latex": "乳胶",
-    "leather": "皮革",
-    "miniskirt": "超短裙",
-    "off-shoulder": "露肩/一字领",
-    "pantyhose": "连裤袜",
-    "ribbon": "丝带/蝴蝶结",
-    "short shorts": "超短裤",
-    "side slit": "侧开叉",
-    "silk": "丝绸",
-    "sleeveless": "无袖",
-    "thighhighs": "大腿袜",
-    "tie": "领带/系带",
-    "translucent": "半透明",
-};
+const TRAITS_TRANSLATION = {};
 
 app.registerExtension({
     name: "AnimaClothingTagSelector.extension",
 
     async beforeRegisterNodeDef(nodeType, nodeData) {
-        if (nodeData.name === "AnimaClothingTagSelector" || nodeData.name === "AnimaClothingTagSelectorPlus") {
+        if (nodeData.name === "AnimaClothingTagSelector" || nodeData.name === "AnimaClothingTagSelectorPlus" || isAnimaPromptPlusNode(nodeData.name)) {
+            installSelectorExecutionSync(nodeType);
             const origOnCreated = nodeType.prototype.onNodeCreated;
             nodeType.prototype.onNodeCreated = function () {
                 origOnCreated?.apply(this, arguments);
 
                 const clothingTagsWidget = this.widgets.find(w => w.name === "clothing_tags");
-                const btnWidget = this.addWidget("button", t("Open Clothing Selector"), null, async () => {
-                    if (!window.clothingData) {
-                        alert(t("Anima clothing database is loading, please wait a few seconds..."));
-                        return;
-                    }
-                    await openClothingSelectorModal(this, clothingTagsWidget);
+                if (!clothingTagsWidget) return;
+                addSelectorActionRow(this, {
+                    section: "clothing",
+                    label: t("Open Clothing Selector"),
+                    accent: THEME.accent,
+                    accentText: THEME.accentText,
+                    onOpen: async () => {
+                        if (!window.clothingData) {
+                            alert(t("Anima clothing database is loading, please wait a few seconds..."));
+                            return;
+                        }
+                        await openClothingSelectorModal(this, clothingTagsWidget);
+                    },
                 });
-
-                if (btnWidget && btnWidget.el) {
-                    btnWidget.el.style.cssText += `
-                        border: 1px solid rgba(219, 39, 119, 0.4) !important;
-                        background: linear-gradient(135deg, rgba(219, 39, 119, 0.1), rgba(157, 23, 77, 0.15)) !important;
-                        color: #f472b6 !important;
-                        font-weight: 600 !important;
-                        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
-                    `;
-                    btnWidget.el.onmouseover = () => {
-                        btnWidget.el.style.boxShadow = "0 0 12px rgba(219, 39, 119, 0.35)";
-                        btnWidget.el.style.background = "linear-gradient(135deg, rgba(219, 39, 119, 0.25), rgba(157, 23, 77, 0.3))";
-                    };
-                    btnWidget.el.onmouseout = () => {
-                        btnWidget.el.style.boxShadow = "none";
-                        btnWidget.el.style.background = "linear-gradient(135deg, rgba(219, 39, 119, 0.1), rgba(157, 23, 77, 0.15))";
-                    };
-                }
             };
         }
     }
 });
 
-function splitPromptTokens(value) {
-    return String(value || "")
-        .split(",")
-        .map(part => part.replace(/^_raw_:/, "").trim())
-        .filter(Boolean);
-}
-
-function normalizePromptToken(value) {
-    return String(value || "").replace(/^_raw_:/, "").trim().toLowerCase();
+function normalizeCategoryValue(category) {
+    const text = String(category || "").trim();
+    if (CATEGORY_LIST.includes(text)) return text;
+    const englishPart = text.match(/\(([^)]+)\)$/)?.[1];
+    if (englishPart && CATEGORY_LIST.includes(englishPart)) return englishPart;
+    return text;
 }
 
 function getItemKey(item) {
@@ -111,10 +85,7 @@ function formatDisplayName(item, displayLang) {
 }
 
 function getCategoryLabel(category, displayLang) {
-    if (displayLang === "en") {
-        return category.match(/\(([^)]+)\)/)?.[1] || category;
-    }
-    return category;
+    return category.match(/\(([^)]+)\)/)?.[1] || category;
 }
 
 function getTraitZh(trait, data) {
@@ -127,43 +98,6 @@ function getTraitZh(trait, data) {
         if (idx !== -1 && zhList[idx]) return zhList[idx];
     }
     return trait;
-}
-
-function escapeHtml(value) {
-    return String(value || "").replace(/[&<>"']/g, ch => ({
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&#39;",
-    }[ch]));
-}
-
-function createEl(tag, className, text) {
-    const el = document.createElement(tag);
-    if (className) el.className = className;
-    if (text !== undefined) el.innerText = text;
-    return el;
-}
-
-function fallbackCopy(text, callback) {
-    const ta = document.createElement("textarea");
-    ta.value = text;
-    ta.style.position = "fixed";
-    ta.style.opacity = "0";
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand("copy");
-    ta.remove();
-    callback?.();
-}
-
-function copyText(text, callback) {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(text).then(() => callback?.()).catch(() => fallbackCopy(text, callback));
-    } else {
-        fallbackCopy(text, callback);
-    }
 }
 
 async function openClothingSelectorModal(node, tagsWidget) {
@@ -236,6 +170,7 @@ async function openClothingSelectorModal(node, tagsWidget) {
     const FILTER_STORAGE_KEY = "anima-clothing-selector-filters";
     const CACHE_STORAGE_KEY = "anima-clothing-selector-use-cache";
     const CACHE_BUST_KEY = "anima-clothing-selector-cache-bust";
+    const COLLECTIONS_COLLAPSE_STORAGE_KEY = "anima-clothing-selector-collections-collapsed";
 
     let activeSort = localStorage.getItem(SORT_STORAGE_KEY) || "id-asc";
     let displayLang = localStorage.getItem(DISPLAY_LANG_STORAGE_KEY) || "bilingual";
@@ -247,6 +182,7 @@ async function openClothingSelectorModal(node, tagsWidget) {
     let totalPages = 1;
     let lastScrollTop = parseInt(localStorage.getItem(SCROLL_STORAGE_KEY), 10) || 0;
     let lastSidebarScrollTop = parseInt(localStorage.getItem(SIDEBAR_SCROLL_STORAGE_KEY), 10) || 0;
+    let collectionsCollapsed = localStorage.getItem(COLLECTIONS_COLLAPSE_STORAGE_KEY) === "true";
 
     const activeFilters = {
         categories: new Set(),
@@ -256,7 +192,7 @@ async function openClothingSelectorModal(node, tagsWidget) {
 
     try {
         const saved = JSON.parse(localStorage.getItem(FILTER_STORAGE_KEY) || "{}");
-        if (Array.isArray(saved.categories)) saved.categories.forEach(v => activeFilters.categories.add(v));
+        if (Array.isArray(saved.categories)) saved.categories.forEach(v => activeFilters.categories.add(normalizeCategoryValue(v)));
         if (Array.isArray(saved.traits)) saved.traits.forEach(v => activeFilters.traits.add(v));
         if (saved.collection) activeFilters.collection = saved.collection;
     } catch (e) {
@@ -305,508 +241,7 @@ async function openClothingSelectorModal(node, tagsWidget) {
         }));
     }
 
-    const styleSheet = document.createElement("style");
-    styleSheet.textContent = `
-        @keyframes animaClothingFadeIn {
-            from { opacity: 0; transform: scale(0.97) translateY(8px); }
-            to { opacity: 1; transform: scale(1) translateY(0); }
-        }
-        @keyframes animaClothingSpin {
-            to { transform: translate(-50%, -50%) rotate(360deg); }
-        }
-        @keyframes animaClothingShimmer {
-            0% { background-position: -200% 0; }
-            100% { background-position: 200% 0; }
-        }
-        .anima-clothing-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
-        .anima-clothing-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .anima-clothing-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.14); border-radius: 999px; }
-        .anima-clothing-btn {
-            border: 1px solid rgba(255,255,255,0.08);
-            border-radius: 12px;
-            background: rgba(255,255,255,0.05);
-            color: #e5e7eb;
-            padding: 9px 14px;
-            font-size: 13px;
-            font-weight: 700;
-            cursor: pointer;
-            transition: all 0.18s ease;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            user-select: none;
-            white-space: nowrap;
-        }
-        .anima-clothing-btn:hover:not(:disabled) {
-            background: rgba(255,255,255,0.11);
-            border-color: rgba(255,255,255,0.16);
-            color: #fff;
-        }
-        .anima-clothing-btn:disabled { opacity: 0.3; cursor: not-allowed; }
-        .anima-clothing-btn.primary {
-            background: linear-gradient(135deg, #db2777, #9d174d);
-            border-color: rgba(219,39,119,0.35);
-            color: #fff;
-            box-shadow: 0 8px 20px rgba(219,39,119,0.24);
-        }
-        .anima-clothing-btn.primary:hover:not(:disabled) {
-            box-shadow: 0 10px 25px rgba(219,39,119,0.36);
-        }
-        .anima-clothing-btn.danger {
-            background: rgba(239,68,68,0.08);
-            border-color: rgba(239,68,68,0.22);
-            color: #fca5a5;
-        }
-        .anima-clothing-btn.active {
-            background: rgba(219,39,119,0.18);
-            border-color: rgba(219,39,119,0.42);
-            color: #f9a8d4;
-        }
-        .anima-clothing-pagination {
-            padding: 14px 24px;
-            background: linear-gradient(180deg, rgba(18,18,24,0.2), rgba(18,18,24,0.62));
-            border-top: 1px solid rgba(255,255,255,0.06);
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 14px;
-            flex-wrap: wrap;
-            box-shadow: 0 -12px 32px rgba(0,0,0,0.18);
-        }
-        .anima-clothing-pagination-stats {
-            min-height: 36px;
-            padding: 0 14px;
-            border-radius: 999px;
-            background: rgba(255,255,255,0.045);
-            border: 1px solid rgba(255,255,255,0.07);
-            color: #d4d4d8;
-            font-size: 12.5px;
-            font-weight: 750;
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            white-space: nowrap;
-            max-width: min(460px, 100%);
-            overflow: hidden;
-            text-overflow: ellipsis;
-            box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
-        }
-        .anima-clothing-pagination-stats::before {
-            content: "";
-            width: 7px;
-            height: 7px;
-            border-radius: 50%;
-            background: #db2777;
-            box-shadow: 0 0 14px rgba(219,39,119,0.72);
-            flex: 0 0 auto;
-        }
-        .anima-clothing-pagination-controls {
-            display: flex;
-            align-items: center;
-            justify-content: flex-end;
-            gap: 8px;
-            flex-wrap: wrap;
-            margin-left: auto;
-        }
-        .anima-clothing-page-number {
-            min-height: 36px;
-            padding: 0;
-            border-radius: 0;
-            background: transparent;
-            border: none;
-            color: #d1d5db;
-            display: inline-flex;
-            align-items: center;
-            gap: 7px;
-            box-shadow: none;
-        }
-        .anima-clothing-page-btn {
-            min-height: 36px;
-            padding: 0 13px;
-            background: rgba(255,255,255,0.05);
-            border: 1px solid rgba(255,255,255,0.08);
-            border-radius: 999px;
-            color: #d4d4d8;
-            font-size: 12.5px;
-            font-weight: 750;
-            cursor: pointer;
-            transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, transform 0.18s ease;
-        }
-        .anima-clothing-page-btn:hover:not(:disabled) {
-            background: rgba(219,39,119,0.16);
-            color: #fff;
-            border-color: rgba(219,39,119,0.38);
-            transform: translateY(-1px);
-        }
-        .anima-clothing-page-btn:disabled {
-            opacity: 0.35;
-            cursor: not-allowed;
-        }
-        .anima-clothing-page-input {
-            width: 48px;
-            padding: 6px 4px;
-            background: transparent;
-            border: none;
-            border-bottom: 1px solid rgba(255,255,255,0.16);
-            border-radius: 0;
-            color: #fff;
-            font-size: 13px;
-            font-weight: 800;
-            text-align: center;
-            outline: none;
-            transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
-        }
-        .anima-clothing-page-input:focus {
-            background: transparent;
-            border-bottom-color: rgba(219,39,119,0.72);
-            box-shadow: none;
-        }
-        .anima-clothing-select, .anima-clothing-input {
-            background: rgba(10,10,15,0.76);
-            border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 12px;
-            color: #f8fafc;
-            outline: none;
-            font-size: 13px;
-            transition: border-color 0.18s ease, box-shadow 0.18s ease;
-        }
-        .anima-clothing-select { padding: 10px 13px; cursor: pointer; }
-        .anima-clothing-input { padding: 11px 14px; }
-        .anima-clothing-select:focus, .anima-clothing-input:focus {
-            border-color: rgba(219,39,119,0.55);
-            box-shadow: 0 0 0 3px rgba(219,39,119,0.12);
-        }
-        .anima-clothing-sidebar-item {
-            padding: 10px 12px;
-            border-radius: 10px;
-            color: #a1a1aa;
-            cursor: pointer;
-            border: 1px solid transparent;
-            transition: all 0.16s ease;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 8px;
-            font-size: 12.5px;
-            font-weight: 650;
-            user-select: none;
-        }
-        .anima-clothing-sidebar-item:hover {
-            background: rgba(255,255,255,0.05);
-            color: #fff;
-        }
-        .anima-clothing-sidebar-item.active {
-            background: rgba(219,39,119,0.14);
-            border-color: rgba(219,39,119,0.34);
-            color: #f9a8d4;
-        }
-        .anima-clothing-check-row {
-            display: flex;
-            gap: 9px;
-            align-items: flex-start;
-            color: #cbd5e1;
-            font-size: 12.5px;
-            font-weight: 600;
-            cursor: pointer;
-            padding: 8px 9px;
-            border-radius: 9px;
-            line-height: 1.28;
-            transition: background 0.15s ease;
-        }
-        .anima-clothing-check-row:hover { background: rgba(255,255,255,0.045); }
-        .anima-clothing-check-row input { margin-top: 2px; accent-color: #db2777; }
-        .anima-clothing-card {
-            position: relative;
-            width: 100%;
-            height: 100%;
-            min-height: 0;
-            min-width: 0;
-            overflow: hidden;
-            box-sizing: border-box;
-            border-radius: 16px;
-            isolation: isolate;
-            background: rgba(255,255,255,0.06);
-            border: 2px solid rgba(255,255,255,0.06);
-            box-shadow: 0 5px 18px rgba(0,0,0,0.25);
-            cursor: pointer;
-            transition: border-color 0.18s ease, box-shadow 0.18s ease;
-        }
-        .anima-clothing-card:hover {
-            border-color: rgba(219,39,119,0.82);
-            box-shadow: 0 12px 30px rgba(0,0,0,0.38), 0 0 18px rgba(219,39,119,0.14);
-        }
-        .anima-clothing-card.selected {
-            border-color: #db2777;
-            box-shadow: 0 12px 30px rgba(0,0,0,0.36), 0 0 24px rgba(219,39,119,0.24);
-        }
-        .anima-clothing-card-clip {
-            position: absolute;
-            inset: 2px;
-            z-index: 0;
-            overflow: hidden;
-            border-radius: 13px;
-            clip-path: inset(0 round 13px);
-            background: #0a0a10;
-        }
-        .anima-clothing-card img {
-            position: absolute;
-            inset: 0;
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            display: block;
-            opacity: 0;
-            transition: opacity 0.28s ease;
-        }
-        .anima-clothing-placeholder {
-            position: absolute;
-            inset: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: linear-gradient(135deg, #2a1430, #101018);
-            color: rgba(255,255,255,0.68);
-            font-size: 46px;
-            font-weight: 900;
-            z-index: 1;
-        }
-        .anima-clothing-shimmer {
-            position: absolute;
-            inset: 0;
-            background: linear-gradient(90deg, rgba(20,20,30,0.9) 25%, rgba(219,39,119,0.12) 50%, rgba(20,20,30,0.9) 75%);
-            background-size: 200% 100%;
-            animation: animaClothingShimmer 1.5s infinite linear;
-            z-index: 2;
-            pointer-events: none;
-        }
-        .anima-clothing-spinner {
-            position: absolute;
-            left: 50%;
-            top: 50%;
-            width: 26px;
-            height: 26px;
-            border: 2.5px solid rgba(219,39,119,0.16);
-            border-top-color: #db2777;
-            border-radius: 50%;
-            animation: animaClothingSpin 0.85s infinite linear;
-        }
-        .anima-clothing-card-mask {
-            position: absolute;
-            inset: 0;
-            background: linear-gradient(to top, rgba(10,10,16,0.99) 0%, rgba(10,10,16,0.72) 42%, rgba(10,10,16,0.16) 100%);
-            z-index: 3;
-            pointer-events: none;
-        }
-        .anima-clothing-card-info {
-            position: absolute;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            z-index: 4;
-            padding: 13px 12px;
-            display: flex;
-            flex-direction: column;
-            gap: 5px;
-            min-width: 0;
-            transition: opacity 0.2s ease;
-            pointer-events: none;
-        }
-        .anima-clothing-card:hover .anima-clothing-card-info { opacity: 0; }
-        .anima-clothing-card-title {
-            color: #fff;
-            font-size: 13.5px;
-            font-weight: 850;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            text-shadow: 0 2px 8px rgba(0,0,0,0.72);
-        }
-        .anima-clothing-card-sub {
-            color: #cbd5e1;
-            font-size: 10.5px;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            opacity: 0.9;
-        }
-        .anima-clothing-card-badges {
-            display: flex;
-            gap: 5px;
-            min-width: 0;
-            overflow: hidden;
-        }
-        .anima-clothing-badge {
-            color: #f9a8d4;
-            background: rgba(219,39,119,0.16);
-            border: 1px solid rgba(219,39,119,0.24);
-            border-radius: 999px;
-            padding: 2px 7px;
-            font-size: 10px;
-            font-weight: 750;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-        .anima-clothing-tags-overlay {
-            position: absolute;
-            inset: 0;
-            z-index: 5;
-            padding: 42px 12px 14px;
-            box-sizing: border-box;
-            opacity: 0;
-            pointer-events: none;
-            background: rgba(7, 7, 14, 0.76);
-            backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
-            transition: opacity 0.2s ease;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            overflow: hidden;
-        }
-        .anima-clothing-card:hover .anima-clothing-tags-overlay {
-            opacity: 1;
-            pointer-events: auto;
-        }
-        .anima-clothing-tags-title {
-            border: 1px solid rgba(219,39,119,0.32);
-            background: rgba(219,39,119,0.16);
-            color: #fce7f3;
-            border-radius: 999px;
-            padding: 6px 9px;
-            font-size: 11px;
-            font-weight: 850;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 8px;
-            width: 100%;
-            min-width: 0;
-        }
-        .anima-clothing-tags-list {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 5px;
-            align-content: flex-start;
-            overflow-y: auto;
-            min-height: 0;
-            padding-right: 2px;
-            scrollbar-width: none;
-            -ms-overflow-style: none;
-        }
-        .anima-clothing-tags-list::-webkit-scrollbar { display: none; }
-        .anima-clothing-tag-pill {
-            border: 1px solid rgba(255,255,255,0.1);
-            background: rgba(255,255,255,0.07);
-            color: #e5e7eb;
-            border-radius: 999px;
-            padding: 4px 7px;
-            font-size: 10.5px;
-            font-weight: 650;
-            line-height: 1.15;
-            cursor: pointer;
-            max-width: 100%;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-        .anima-clothing-tag-pill:hover {
-            border-color: rgba(219,39,119,0.45);
-            color: #fff;
-            background: rgba(219,39,119,0.22);
-        }
-        .anima-clothing-create-card {
-            position: relative;
-            width: 100%;
-            height: 100%;
-            box-sizing: border-box;
-            border-radius: 16px;
-            border: 2px dashed rgba(219,39,119,0.42);
-            background: rgba(22,22,32,0.42);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            user-select: none;
-            transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
-        }
-        .anima-clothing-create-card:hover {
-            border-color: rgba(219,39,119,0.86);
-            background: rgba(219,39,119,0.07);
-            box-shadow: 0 12px 30px rgba(0,0,0,0.32), 0 0 18px rgba(219,39,119,0.16);
-        }
-        .anima-clothing-create-card-content {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            gap: 12px;
-            color: #f472b6;
-            padding: 18px;
-            text-align: center;
-            transition: transform 0.2s ease, color 0.2s ease;
-        }
-        .anima-clothing-create-card:hover .anima-clothing-create-card-content {
-            color: #fff;
-            transform: scale(1.06);
-        }
-        .anima-clothing-icon-btn {
-            position: absolute;
-            right: 9px;
-            z-index: 7;
-            width: 28px;
-            height: 28px;
-            border-radius: 50%;
-            background: rgba(10,10,15,0.48);
-            border: 1px solid rgba(255,255,255,0.12);
-            backdrop-filter: blur(5px);
-            color: #e5e7eb;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            transition: transform 0.15s ease, background 0.15s ease, color 0.15s ease;
-        }
-        .anima-clothing-icon-btn:hover {
-            transform: scale(1.1);
-            background: rgba(10,10,15,0.72);
-            color: #f9a8d4;
-        }
-        .anima-clothing-selected-mark {
-            position: absolute;
-            top: 9px;
-            left: 9px;
-            z-index: 7;
-            width: 24px;
-            height: 24px;
-            border-radius: 8px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: rgba(10,10,15,0.52);
-            border: 1px solid rgba(255,255,255,0.28);
-            color: #fff;
-            transition: all 0.15s ease;
-        }
-        .anima-clothing-card.selected .anima-clothing-selected-mark {
-            background: #db2777;
-            border-color: #db2777;
-        }
-        .anima-clothing-popover {
-            position: fixed;
-            z-index: 1000000;
-            min-width: 170px;
-            max-height: 280px;
-            overflow-y: auto;
-            background: #1c1c1e;
-            border: 1px solid rgba(255,255,255,0.14);
-            border-radius: 12px;
-            padding: 10px;
-            box-shadow: 0 14px 34px rgba(0,0,0,0.52);
-        }
-    `;
+    const styleSheet = createGallerySelectorStyleSheet("clothing");
     document.head.appendChild(styleSheet);
 
     const overlay = createEl("div");
@@ -1130,72 +565,80 @@ async function openClothingSelectorModal(node, tagsWidget) {
 
     function renderSidebar() {
         sidebar.innerHTML = "";
-        sidebar.appendChild(sectionTitle(t("Collections")));
+        const clearFiltersBtn = createEl("button", "anima-clothing-clear-filters-btn");
+        clearFiltersBtn.type = "button";
+        clearFiltersBtn.innerHTML = `
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+            <span>${t("Clear Filters")}</span>
+        `;
+        clearFiltersBtn.disabled = !hasActiveSidebarFilters();
+        clearFiltersBtn.onclick = clearSidebarFilters;
+        sidebar.appendChild(clearFiltersBtn);
 
-        const allItem = sidebarItem(t("All Clothing"), activeFilters.collection === "all", clothingData.length);
-        allItem.onclick = () => switchCollection("all");
-        sidebar.appendChild(allItem);
+        sidebar.appendChild(collectionsSectionHeader());
 
-        const defaultCount = favoriteItems.filter(item => item.groupIds?.includes("default")).length;
-        const defaultItem = sidebarItem(t("My Favorites"), activeFilters.collection === "default", defaultCount);
-        defaultItem.onclick = () => switchCollection("default");
-        sidebar.appendChild(defaultItem);
+        const collectionsContent = createEl("div");
+        collectionsContent.style.cssText = collectionsCollapsed ? "display: none;" : "display: flex; flex-direction: column;";
+        if (!collectionsCollapsed) {
+            const allItem = sidebarItem(t("All Clothing"), activeFilters.collection === "all", clothingData.length);
+            allItem.onclick = () => switchCollection("all");
+            collectionsContent.appendChild(allItem);
 
-        groups.filter(group => group.id !== "default").forEach(group => {
-            const groupCount = favoriteItems.filter(item => item.groupIds?.includes(group.id)).length;
-            const row = sidebarItem(group.name, activeFilters.collection === group.id, groupCount);
-            row.onclick = () => switchCollection(group.id);
-            const tools = createEl("span");
-            tools.style.cssText = "display: inline-flex; gap: 5px;";
-            const rename = createEl("button");
-            rename.title = t("Rename Group");
-            rename.innerHTML = editIcon();
-            rename.style.cssText = miniToolStyle();
-            rename.onclick = (event) => {
-                event.stopPropagation();
-                openTextInputModal(t("Rename Group"), t("Enter new group name..."), group.name, async value => {
-                    group.name = value;
+            const defaultCount = favoriteItems.filter(item => item.groupIds?.includes("default")).length;
+            const defaultItem = sidebarItem(t("My Favorites"), activeFilters.collection === "default", defaultCount);
+            defaultItem.onclick = () => switchCollection("default");
+            collectionsContent.appendChild(defaultItem);
+
+            groups.filter(group => group.id !== "default").forEach(group => {
+                const groupCount = favoriteItems.filter(item => item.groupIds?.includes(group.id)).length;
+                const row = sidebarItem(group.name, activeFilters.collection === group.id, groupCount);
+                row.onclick = () => switchCollection(group.id);
+                const tools = createEl("span");
+                tools.style.cssText = "display: inline-flex; gap: 5px;";
+                const rename = createEl("button");
+                rename.title = t("Rename Group");
+                rename.innerHTML = editIcon();
+                rename.style.cssText = miniToolStyle();
+                rename.onclick = (event) => {
+                    event.stopPropagation();
+                    openTextInputModal(t("Rename Group"), t("Enter new group name..."), group.name, async value => {
+                        group.name = value;
+                        await saveFavorites();
+                        renderSidebar();
+                        return true;
+                    });
+                };
+                const del = createEl("button");
+                del.title = t("Delete Group");
+                del.innerHTML = trashIcon(12);
+                del.style.cssText = miniToolStyle("#fca5a5");
+                del.onclick = async (event) => {
+                    event.stopPropagation();
+                    if (!confirm(t("Are you sure you want to delete this group? Items inside won't be deleted."))) return;
+                    groups = groups.filter(g => g.id !== group.id);
+                    favoriteItems.forEach(item => {
+                        item.groupIds = (item.groupIds || []).filter(id => id !== group.id);
+                    });
+                    favoriteMap.forEach(item => {
+                        item.groupIds = (item.groupIds || []).filter(id => id !== group.id);
+                        if (!item.groupIds.length) favoriteSet.delete(String(item.id || item.name || ""));
+                    });
+                    if (activeFilters.collection === group.id) activeFilters.collection = "all";
+                    persistFilters();
                     await saveFavorites();
                     renderSidebar();
-                    return true;
-                });
-            };
-            const del = createEl("button");
-            del.title = t("Delete Group");
-            del.innerHTML = trashIcon(12);
-            del.style.cssText = miniToolStyle("#fca5a5");
-            del.onclick = async (event) => {
-                event.stopPropagation();
-                if (!confirm(t("Are you sure you want to delete this group? Items inside won't be deleted."))) return;
-                groups = groups.filter(g => g.id !== group.id);
-                favoriteItems.forEach(item => {
-                    item.groupIds = (item.groupIds || []).filter(id => id !== group.id);
-                });
-                favoriteMap.forEach(item => {
-                    item.groupIds = (item.groupIds || []).filter(id => id !== group.id);
-                    if (!item.groupIds.length) favoriteSet.delete(String(item.id || item.name || ""));
-                });
-                if (activeFilters.collection === group.id) activeFilters.collection = "all";
-                persistFilters();
-                await saveFavorites();
-                renderSidebar();
-                triggerFilter();
-            };
-            tools.appendChild(rename);
-            tools.appendChild(del);
-            row.appendChild(tools);
-            sidebar.appendChild(row);
-        });
-
-        const createGroupBtn = createEl("button", "anima-clothing-btn", t("Create Group"));
-        createGroupBtn.style.cssText += "width: 100%; margin: 10px 0 16px;";
-        createGroupBtn.onclick = () => openTextInputModal(t("Create New Group"), t("Enter group name..."), "", async value => {
-            groups.push({ id: `group_${Date.now()}`, name: value, isSystem: false });
-            await saveFavorites();
-            renderSidebar();
-            return true;
-        });
-        sidebar.appendChild(createGroupBtn);
+                    triggerFilter();
+                };
+                tools.appendChild(rename);
+                tools.appendChild(del);
+                row.appendChild(tools);
+                collectionsContent.appendChild(row);
+            });
+        }
+        sidebar.appendChild(collectionsContent);
 
         sidebar.appendChild(sectionTitle(t("Categories")));
         CATEGORY_LIST.forEach(category => {
@@ -1209,6 +652,7 @@ async function openClothingSelectorModal(node, tagsWidget) {
                 else activeFilters.categories.delete(category);
                 currentPage = 1;
                 persistFilters();
+                updateClearFiltersButtonState();
                 triggerFilter();
             };
             sidebar.appendChild(row);
@@ -1228,6 +672,7 @@ async function openClothingSelectorModal(node, tagsWidget) {
                 else activeFilters.traits.delete(trait.name);
                 currentPage = 1;
                 persistFilters();
+                updateClearFiltersButtonState();
                 triggerFilter();
             };
             sidebar.appendChild(row);
@@ -1239,17 +684,47 @@ async function openClothingSelectorModal(node, tagsWidget) {
         }
     }
 
+    function collectionsSectionHeader() {
+        const header = createEl("div", "anima-clothing-section-header foldable");
+        const title = createEl("span", "anima-clothing-section-title", t("Collections"));
+        const spacer = createEl("span", "anima-clothing-section-spacer");
+        const addBtn = createEl("button", "anima-clothing-section-icon-btn");
+        addBtn.type = "button";
+        addBtn.title = t("Create Group");
+        addBtn.innerHTML = "+";
+        const arrow = createEl("span", `anima-clothing-section-arrow${collectionsCollapsed ? " collapsed" : ""}`);
+        arrow.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>`;
+
+        addBtn.onclick = (event) => {
+            event.stopPropagation();
+            openCreateGroupModal();
+        };
+        header.onclick = () => {
+            collectionsCollapsed = !collectionsCollapsed;
+            localStorage.setItem(COLLECTIONS_COLLAPSE_STORAGE_KEY, String(collectionsCollapsed));
+            renderSidebar();
+        };
+
+        header.appendChild(title);
+        header.appendChild(spacer);
+        header.appendChild(addBtn);
+        header.appendChild(arrow);
+        return header;
+    }
+
+    function openCreateGroupModal() {
+        openTextInputModal(t("Create New Group"), t("Enter group name..."), "", async value => {
+            groups.push({ id: `group_${Date.now()}`, name: value, isSystem: false });
+            await saveFavorites();
+            collectionsCollapsed = false;
+            localStorage.setItem(COLLECTIONS_COLLAPSE_STORAGE_KEY, "false");
+            renderSidebar();
+            return true;
+        });
+    }
+
     function sectionTitle(label) {
-        const titleEl = createEl("div", null, label);
-        titleEl.style.cssText = `
-            color: #71717a;
-            font-size: 11px;
-            font-weight: 850;
-            letter-spacing: 0.08em;
-            text-transform: uppercase;
-            margin: 14px 8px 8px;
-        `;
-        return titleEl;
+        return createEl("div", "anima-clothing-section-header", label);
     }
 
     function sidebarItem(label, active, count) {
@@ -1272,16 +747,34 @@ async function openClothingSelectorModal(node, tagsWidget) {
         triggerFilter();
     }
 
+    function hasActiveSidebarFilters() {
+        return activeFilters.collection !== "all" ||
+            activeFilters.categories.size > 0 ||
+            activeFilters.traits.size > 0;
+    }
+
+    function updateClearFiltersButtonState() {
+        const clearFiltersBtn = sidebar.querySelector(".anima-clothing-clear-filters-btn");
+        if (clearFiltersBtn) {
+            clearFiltersBtn.disabled = !hasActiveSidebarFilters();
+        }
+    }
+
+    function clearSidebarFilters() {
+        if (!hasActiveSidebarFilters()) return;
+        activeFilters.collection = "all";
+        activeFilters.categories.clear();
+        activeFilters.traits.clear();
+        currentPage = 1;
+        listContainer.scrollTop = 0;
+        persistFilters();
+        renderSidebar();
+        triggerFilter();
+    }
+
     function triggerFilter() {
         const query = searchInput.value.toLowerCase().trim();
-        const aliases = {
-            "丝袜": ["stockings", "thighhighs", "pantyhose", "kneehighs", "socks", "legwear"],
-            "袜子": ["stockings", "thighhighs", "pantyhose", "kneehighs", "socks"],
-            "高跟鞋": ["high heels", "heels", "pumps", "stiletto"],
-            "手套": ["gloves", "mittens"],
-            "裙": ["dress", "skirt", "gown", "礼服", "裙装"],
-            "内衣": ["lingerie", "panties", "underwear", "bra"],
-        };
+        const aliases = {};
         let queryList = query ? [query] : [];
         for (const [key, values] of Object.entries(aliases)) {
             if (query.includes(key)) queryList = queryList.concat(values);
@@ -1320,7 +813,7 @@ async function openClothingSelectorModal(node, tagsWidget) {
 
                 if (activeFilters.categories.size > 0) {
                     const categories = Array.isArray(item.categories) ? item.categories : [];
-                    if (!categories.some(category => activeFilters.categories.has(category))) return false;
+                    if (!categories.some(category => activeFilters.categories.has(normalizeCategoryValue(category)))) return false;
                 }
 
                 if (activeFilters.traits.size > 0) {
@@ -1833,58 +1326,20 @@ async function openClothingSelectorModal(node, tagsWidget) {
     }
 
     function createModalShell(maxWidth = 400) {
-        const dialog = createEl("div");
-        dialog.style.cssText = `
-            position: fixed;
-            inset: 0;
-            z-index: 100000;
-            background: rgba(0,0,0,0.6);
-            backdrop-filter: blur(10px);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        `;
-        const content = createEl("div");
-        content.style.cssText = `
-            width: 90%;
-            max-width: ${maxWidth}px;
-            background: #1c1c1e;
-            border: 1px solid rgba(255,255,255,0.12);
-            border-radius: 16px;
-            padding: 22px;
-            display: flex;
-            flex-direction: column;
-            gap: 14px;
-            box-shadow: 0 18px 45px rgba(0,0,0,0.52);
-            animation: animaClothingFadeIn 0.18s ease forwards;
-        `;
-        dialog.appendChild(content);
-        dialog.onclick = event => {
-            if (event.target === dialog) dialog.remove();
-        };
-        return dialog;
+        return createSharedModalShell({
+            maxWidth,
+            animationName: "animaClothingFadeIn",
+        });
     }
 
     function modalButtons(dialog, onConfirm, confirmText = t("OK")) {
-        const row = createEl("div");
-        row.style.cssText = "display:flex;justify-content:flex-end;gap:10px;margin-top:6px;";
-        const cancel = createEl("button", "anima-clothing-btn", t("Cancel"));
-        cancel.onclick = () => dialog.remove();
-        const confirmBtn = createEl("button", "anima-clothing-btn primary", confirmText);
-        confirmBtn.onclick = async () => {
-            confirmBtn.disabled = true;
-            cancel.disabled = true;
-            const shouldClose = await onConfirm();
-            if (shouldClose !== false) {
-                dialog.remove();
-            } else {
-                confirmBtn.disabled = false;
-                cancel.disabled = false;
-            }
-        };
-        row.appendChild(cancel);
-        row.appendChild(confirmBtn);
-        return row;
+        return createModalButtons({
+            dialog,
+            onConfirm,
+            cancelText: t("Cancel"),
+            confirmText,
+            buttonClass: "anima-clothing-btn",
+        });
     }
 
     function buildSelectedText() {
@@ -1927,36 +1382,9 @@ async function openClothingSelectorModal(node, tagsWidget) {
     }
 
     function showToast(message) {
-        const toast = createEl("div", null, message);
-        toast.style.cssText = `
-            position: fixed;
-            right: 30px;
-            bottom: 30px;
-            z-index: 100000;
-            background: rgba(16,16,24,0.94);
-            border: 1px solid rgba(219,39,119,0.45);
-            color: #fff;
-            padding: 10px 18px;
-            border-radius: 12px;
-            box-shadow: 0 12px 28px rgba(0,0,0,0.5);
-            font-size: 13px;
-            font-weight: 700;
-            pointer-events: none;
-        `;
-        document.body.appendChild(toast);
-        setTimeout(() => {
-            toast.style.transition = "opacity 0.25s ease";
-            toast.style.opacity = "0";
-            setTimeout(() => toast.remove(), 260);
-        }, 1300);
-    }
-
-    function debounce(fn, ms) {
-        let timer = null;
-        return (...args) => {
-            clearTimeout(timer);
-            timer = setTimeout(() => fn(...args), ms);
-        };
+        return showSharedToast(message, {
+            borderColor: "rgba(219,39,119,0.45)",
+        });
     }
 
     function miniToolStyle(color = "#e5e7eb") {

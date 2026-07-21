@@ -1,3 +1,7 @@
+def _anima_selector_tags_result(tags, text):
+    payload = tags if isinstance(tags, dict) else {}
+    return {"ui": {"anima_selector_tags": [payload]}, "result": (text,)}
+
 class AnimaArtistTagSelector:
     @classmethod
     def INPUT_TYPES(cls):
@@ -56,7 +60,7 @@ class AnimaArtistTagSelector:
             else:
                 final_text = ""
 
-        return (final_text,)
+        return _anima_selector_tags_result({"artist_tags": artist_tags}, final_text)
 
 
 class AnimaArtistTagSelectorPlus:
@@ -115,7 +119,7 @@ class AnimaArtistTagSelectorPlus:
         else:
             final_text = joined_artists
 
-        return (final_text,)
+        return _anima_selector_tags_result({"artist_tags": artist_tags}, final_text)
 
 
 class AnimaCharacterTagSelector:
@@ -185,7 +189,6 @@ class AnimaCharacterTagSelector:
         character_output = _character_names if _character_names else joined_characters
         return (final_text, character_output)
 
-
 class AnimaCharacterTagSelectorPlus:
     @classmethod
     def INPUT_TYPES(cls):
@@ -241,7 +244,6 @@ class AnimaCharacterTagSelectorPlus:
         character_output = _character_names if _character_names else joined_characters
         return (final_text, character_output)
 
-
 class AnimaClothingTagSelector:
     @classmethod
     def INPUT_TYPES(cls):
@@ -294,7 +296,7 @@ class AnimaClothingTagSelector:
             else:
                 final_text = ""
 
-        return (final_text,)
+        return _anima_selector_tags_result({"clothing_tags": clothing_tags}, final_text)
 
 class AnimaClothingTagSelectorPlus:
     @classmethod
@@ -340,7 +342,390 @@ class AnimaClothingTagSelectorPlus:
         else:
             final_text = joined_clothing
 
-        return (final_text,)
+        return _anima_selector_tags_result({"clothing_tags": clothing_tags}, final_text)
+
+class AnimaBackgroundTagSelector:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "background_tags": ("STRING", {"multiline": True, "default": ""}),
+                "mode": (["append", "override"], {"default": "append"}),
+            },
+            "optional": {
+                "opt_prompt": ("STRING", {"forceInput": True}),
+            }
+        }
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("text",)
+    FUNCTION = "process_tags"
+    CATEGORY = "AnimaArt"
+
+    def process_tags(self, background_tags, mode, opt_prompt=""):
+        tags_list = [t.strip() for t in background_tags.split(",") if t.strip()]
+        processed_tags = []
+
+        for tag in tags_list:
+            if tag.startswith("_raw_:"):
+                processed_tags.append(tag[6:])
+                continue
+            if tag:
+                processed_tags.append(tag)
+
+        joined_background = ", ".join(processed_tags)
+
+        if opt_prompt and opt_prompt.strip():
+            opt_prompt = opt_prompt.strip()
+            if mode == "append":
+                if joined_background:
+                    if opt_prompt.endswith(","):
+                        final_text = f"{joined_background}, {opt_prompt}"
+                    else:
+                        final_text = f"{joined_background}, {opt_prompt}, "
+                else:
+                    final_text = opt_prompt
+            else:
+                if joined_background:
+                    final_text = f"{joined_background}, "
+                else:
+                    final_text = ""
+        else:
+            if joined_background:
+                final_text = f"{joined_background}, "
+            else:
+                final_text = ""
+
+        return _anima_selector_tags_result({"background_tags": background_tags}, final_text)
+
+class AnimaBackgroundTagSelectorPlus:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "background_tags": ("STRING", {"multiline": True, "default": ""}),
+                "extra_text": ("STRING", {"multiline": True, "default": ""}),
+                "separator": ("STRING", {"default": ", "}),
+            }
+        }
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("text",)
+    FUNCTION = "process_tags"
+    CATEGORY = "AnimaArt"
+
+    def process_tags(self, background_tags, extra_text, separator=", "):
+        tags_list = [t.strip() for t in background_tags.split(",") if t.strip()]
+        processed_tags = []
+
+        for tag in tags_list:
+            if tag.startswith("_raw_:"):
+                processed_tags.append(tag[6:])
+                continue
+            if tag:
+                processed_tags.append(tag)
+
+        joined_background = ", ".join(processed_tags)
+        if joined_background:
+            joined_background += ", "
+
+        extra_text_clean = extra_text.strip() if extra_text else ""
+
+        if extra_text_clean and joined_background:
+            sep = separator if separator is not None else ", "
+            if sep.strip() == "," or sep.strip() == "":
+                final_text = f"{joined_background}{extra_text_clean}"
+            else:
+                final_text = f"{joined_background.rstrip(', ')}{sep}{extra_text_clean}"
+        elif extra_text_clean:
+            final_text = extra_text_clean
+        else:
+            final_text = joined_background
+
+        return _anima_selector_tags_result({"background_tags": background_tags}, final_text)
+
+class AnimaPoseTagSelector:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "pose_tags": ("STRING", {"multiline": True, "default": ""}),
+                "mode": (["append", "override"], {"default": "append"}),
+            },
+            "optional": {
+                "opt_prompt": ("STRING", {"forceInput": True}),
+            }
+        }
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("text",)
+    FUNCTION = "process_tags"
+    CATEGORY = "AnimaArt"
+
+    def process_tags(self, pose_tags, mode, opt_prompt=""):
+        tags_list = [t.strip() for t in pose_tags.split(",") if t.strip()]
+        processed_tags = []
+
+        for tag in tags_list:
+            if tag.startswith("_raw_:"):
+                processed_tags.append(tag[6:])
+                continue
+            if tag:
+                processed_tags.append(tag)
+
+        joined_pose = ", ".join(processed_tags)
+
+        if opt_prompt and opt_prompt.strip():
+            opt_prompt = opt_prompt.strip()
+            if mode == "append":
+                if joined_pose:
+                    if opt_prompt.endswith(","):
+                        final_text = f"{joined_pose}, {opt_prompt}"
+                    else:
+                        final_text = f"{joined_pose}, {opt_prompt}, "
+                else:
+                    final_text = opt_prompt
+            else:
+                if joined_pose:
+                    final_text = f"{joined_pose}, "
+                else:
+                    final_text = ""
+        else:
+            if joined_pose:
+                final_text = f"{joined_pose}, "
+            else:
+                final_text = ""
+
+        return _anima_selector_tags_result({"pose_tags": pose_tags}, final_text)
+
+class AnimaPoseTagSelectorPlus:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "pose_tags": ("STRING", {"multiline": True, "default": ""}),
+                "extra_text": ("STRING", {"multiline": True, "default": ""}),
+                "separator": ("STRING", {"default": ", "}),
+            }
+        }
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("text",)
+    FUNCTION = "process_tags"
+    CATEGORY = "AnimaArt"
+
+    def process_tags(self, pose_tags, extra_text, separator=", "):
+        tags_list = [t.strip() for t in pose_tags.split(",") if t.strip()]
+        processed_tags = []
+
+        for tag in tags_list:
+            if tag.startswith("_raw_:"):
+                processed_tags.append(tag[6:])
+                continue
+            if tag:
+                processed_tags.append(tag)
+
+        joined_pose = ", ".join(processed_tags)
+        if joined_pose:
+            joined_pose += ", "
+
+        extra_text_clean = extra_text.strip() if extra_text else ""
+
+        if extra_text_clean and joined_pose:
+            sep = separator if separator is not None else ", "
+            if sep.strip() == "," or sep.strip() == "":
+                final_text = f"{joined_pose}{extra_text_clean}"
+            else:
+                final_text = f"{joined_pose.rstrip(', ')}{sep}{extra_text_clean}"
+        elif extra_text_clean:
+            final_text = extra_text_clean
+        else:
+            final_text = joined_pose
+
+        return _anima_selector_tags_result({"pose_tags": pose_tags}, final_text)
+
+class AnimaPromptPlus:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "quality_prompt": ("STRING", {"multiline": True, "default": ""}),
+                "artist_tags": ("STRING", {"multiline": True, "default": ""}),
+                "character_tags": ("STRING", {"multiline": True, "default": ""}),
+                "clothing_tags": ("STRING", {"multiline": True, "default": ""}),
+                "pose_tags": ("STRING", {"multiline": True, "default": ""}),
+                "background_tags": ("STRING", {"multiline": True, "default": ""}),
+                "extra_prompt": ("STRING", {"multiline": True, "default": ""}),
+                "separator": ("STRING", {"default": ", "}),
+            }
+        }
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("text",)
+    FUNCTION = "compose_prompt"
+    CATEGORY = "AnimaArt"
+
+    def _split_prompt_tokens(self, value):
+        normalized = str(value or "").replace("\r", ",").replace("\n", ",")
+        return [
+            part.replace("_raw_:", "", 1).strip()
+            for part in normalized.split(",")
+            if part.replace("_raw_:", "", 1).strip()
+        ]
+
+    def _artist_tokens(self, value):
+        tokens = []
+        for tag in self._split_prompt_tokens(value):
+            if tag.startswith("@"):
+                clean = tag[1:].strip()
+            elif tag.lower().startswith("by "):
+                clean = tag[3:].strip()
+            else:
+                clean = tag.strip()
+            if clean:
+                tokens.append(f"@{clean}")
+        return tokens
+
+    def _selector_tags(self, artist_tags, character_tags, clothing_tags, pose_tags, background_tags):
+        return {
+            "artist_tags": artist_tags,
+            "character_tags": character_tags,
+            "clothing_tags": clothing_tags,
+            "pose_tags": pose_tags,
+            "background_tags": background_tags,
+        }
+
+    def _compose_prompt_text(
+        self,
+        quality_prompt,
+        artist_tags,
+        character_tags,
+        clothing_tags,
+        pose_tags,
+        background_tags,
+        extra_prompt,
+        separator=", ",
+    ):
+        parts = []
+        parts.extend(self._split_prompt_tokens(quality_prompt))
+        parts.extend(self._artist_tokens(artist_tags))
+        parts.extend(self._split_prompt_tokens(character_tags))
+        parts.extend(self._split_prompt_tokens(clothing_tags))
+        parts.extend(self._split_prompt_tokens(pose_tags))
+        parts.extend(self._split_prompt_tokens(background_tags))
+        parts.extend(self._split_prompt_tokens(extra_prompt))
+
+        if not parts:
+            return ""
+
+        sep = separator if separator is not None else ", "
+        if sep.strip() == "" or sep.strip() == ",":
+            return f"{', '.join(parts)}, "
+        return sep.join(parts)
+
+    def compose_prompt(
+        self,
+        quality_prompt,
+        artist_tags,
+        character_tags,
+        clothing_tags,
+        pose_tags,
+        background_tags,
+        extra_prompt,
+        separator=", ",
+    ):
+        selector_tags = self._selector_tags(
+            artist_tags,
+            character_tags,
+            clothing_tags,
+            pose_tags,
+            background_tags,
+        )
+        text = self._compose_prompt_text(
+            quality_prompt,
+            artist_tags,
+            character_tags,
+            clothing_tags,
+            pose_tags,
+            background_tags,
+            extra_prompt,
+            separator,
+        )
+        return _anima_selector_tags_result(selector_tags, text)
+
+
+class AnimaPromptPlusClipEncode(AnimaPromptPlus):
+    @classmethod
+    def INPUT_TYPES(cls):
+        prompt_inputs = super().INPUT_TYPES()["required"]
+        return {
+            "required": {
+                "clip": ("CLIP",),
+                **prompt_inputs,
+            },
+            "hidden": {
+                "extra_pnginfo": "EXTRA_PNGINFO",
+                "unique_id": "UNIQUE_ID",
+            },
+        }
+
+    RETURN_TYPES = ("CONDITIONING", "STRING")
+    RETURN_NAMES = ("positive", "text")
+    FUNCTION = "encode_prompt"
+    CATEGORY = "AnimaArt"
+
+    def _record_prompt_metadata(self, extra_pnginfo, unique_id, text):
+        if not isinstance(extra_pnginfo, dict):
+            return
+        records = extra_pnginfo.setdefault("anima_prompt", {})
+        if not isinstance(records, dict):
+            records = {}
+            extra_pnginfo["anima_prompt"] = records
+        records[str(unique_id or "prompt")] = {"positive": text}
+
+    def encode_prompt(
+        self,
+        clip,
+        quality_prompt,
+        artist_tags,
+        character_tags,
+        clothing_tags,
+        pose_tags,
+        background_tags,
+        extra_prompt,
+        separator=", ",
+        extra_pnginfo=None,
+        unique_id=None,
+    ):
+        if clip is None:
+            raise RuntimeError(
+                "ERROR: clip input is invalid: None\n\n"
+                "Connect a valid CLIP output from a checkpoint or text encoder loader."
+            )
+
+        selector_tags = self._selector_tags(
+            artist_tags,
+            character_tags,
+            clothing_tags,
+            pose_tags,
+            background_tags,
+        )
+        resolved_text = self._compose_prompt_text(
+            quality_prompt,
+            artist_tags,
+            character_tags,
+            clothing_tags,
+            pose_tags,
+            background_tags,
+            extra_prompt,
+            separator,
+        )
+        conditioning = clip.encode_from_tokens_scheduled(clip.tokenize(resolved_text))
+        self._record_prompt_metadata(extra_pnginfo, unique_id, resolved_text)
+        return {
+            "ui": {"anima_selector_tags": [selector_tags]},
+            "result": (conditioning, resolved_text),
+        }
 
 class AnimaBackgroundTagSelector:
     @classmethod
@@ -443,6 +828,9 @@ class AnimaBackgroundTagSelectorPlus:
         return (final_text,)
 
 class AnimaPromptComposer:
+    SELECTION_PROPERTY = "anima_prompt_composer_selection"
+    SELECTION_SECTIONS = ("artist", "character", "clothing", "background", "pose")
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
@@ -450,10 +838,18 @@ class AnimaPromptComposer:
                 "enable_artist": ("BOOLEAN", {"default": True}),
                 "enable_character": ("BOOLEAN", {"default": True}),
                 "enable_clothing": ("BOOLEAN", {"default": True}),
+                "enable_background": ("BOOLEAN", {"default": True}),
+                "enable_pose": ("BOOLEAN", {"default": True}),
                 "character_detail": (["trigger", "trigger_tags"], {"default": "trigger"}),
                 "seed": ("INT", {"default": -1, "min": -1, "max": 2147483647}),
                 "artist_count": ("INT", {"default": 1, "min": 0, "max": 20}),
                 "preview_collapsed": ("BOOLEAN", {"default": False}),
+                "resolved_prompt": ("STRING", {"multiline": True, "default": ""}),
+            },
+            "hidden": {
+                "prompt": "PROMPT",
+                "extra_pnginfo": "EXTRA_PNGINFO",
+                "unique_id": "UNIQUE_ID",
             }
         }
 
@@ -476,7 +872,7 @@ class AnimaPromptComposer:
         if seed < 0:
             return time.time()
 
-        cache_kwargs = {key: value for key, value in kwargs.items() if key != "preview_collapsed"}
+        cache_kwargs = {key: value for key, value in kwargs.items() if key not in ("preview_collapsed", "resolved_prompt")}
         payload = json.dumps(cache_kwargs, ensure_ascii=False, sort_keys=True, default=str)
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
@@ -608,6 +1004,34 @@ class AnimaPromptComposer:
             "prompt_parts": self._split_prompt_tokens(item.get("tags")),
         }
 
+    def _background_entry(self, item):
+        item_id = str(item.get("id") or "").strip()
+        title = str(item.get("name_zh") or item.get("name") or "").strip()
+        if not title:
+            return None
+        return {
+            "section": "background",
+            "key": f"background:{item_id or title}",
+            "title": title,
+            "subtitle": str(item.get("name") or ""),
+            "preview": str(item.get("preview") or ""),
+            "prompt_parts": self._split_prompt_tokens(item.get("tags")),
+        }
+
+    def _pose_entry(self, item):
+        item_id = str(item.get("id") or "").strip()
+        title = str(item.get("name_zh") or item.get("name") or "").strip()
+        if not title:
+            return None
+        return {
+            "section": "pose",
+            "key": f"pose:{item_id or title}",
+            "title": title,
+            "subtitle": str(item.get("name") or ""),
+            "preview": str(item.get("preview") or ""),
+            "prompt_parts": self._split_prompt_tokens(item.get("tags")),
+        }
+
     def _entry_parts(self, entry, section, character_detail):
         if section == "character":
             parts = self._split_prompt_tokens(entry.get("trigger_parts"))
@@ -624,37 +1048,185 @@ class AnimaPromptComposer:
                     seen.add(key)
                     output_parts.append(part)
 
-    def compose_prompt(
+    def _workflow_widget_index(self, name):
+        order = [
+            "enable_artist",
+            "enable_character",
+            "enable_clothing",
+            "enable_background",
+            "enable_pose",
+            "character_detail",
+            "seed",
+            "artist_count",
+            "preview_collapsed",
+            "resolved_prompt",
+        ]
+        try:
+            return order.index(name)
+        except ValueError:
+            return -1
+
+    def _set_workflow_widget_value(self, workflow_node, widget_name, value):
+        if not isinstance(workflow_node, dict):
+            return
+        widgets_values = workflow_node.get("widgets_values")
+        if isinstance(widgets_values, list):
+            index = self._workflow_widget_index(widget_name)
+            if index < 0:
+                return
+            while len(widgets_values) <= index:
+                widgets_values.append("")
+            widgets_values[index] = value
+        elif isinstance(widgets_values, dict):
+            widgets_values[widget_name] = value
+
+    def _find_workflow_node(self, workflow, unique_id):
+        if not isinstance(workflow, dict):
+            return None
+        nodes = workflow.get("nodes")
+        if not isinstance(nodes, list):
+            return None
+        unique_id_text = str(unique_id)
+        for node in nodes:
+            if not isinstance(node, dict):
+                continue
+            node_id = node.get("id")
+            if str(node_id) == unique_id_text:
+                return node
+        return None
+
+    def _parse_selection_payload(self, value):
+        import json
+
+        if isinstance(value, dict):
+            return value
+        text = str(value or "").strip()
+        if not text.startswith("{"):
+            return None
+        try:
+            payload = json.loads(text)
+        except Exception:
+            return None
+        return payload if isinstance(payload, dict) else None
+
+    def _empty_selected(self, resolved_prompt=""):
+        selected = {section: [] for section in self.SELECTION_SECTIONS}
+        selected["_resolved_prompt"] = resolved_prompt
+        return selected
+
+    def _normalize_selected(self, selected, resolved_prompt=""):
+        if not isinstance(selected, dict):
+            return self._empty_selected(resolved_prompt)
+
+        normalized = {}
+        for section in self.SELECTION_SECTIONS:
+            entries = selected.get(section)
+            normalized[section] = entries if isinstance(entries, list) else []
+        normalized["_resolved_prompt"] = resolved_prompt or str(selected.get("_resolved_prompt") or "")
+        return normalized
+
+    def _selection_from_workflow(self, extra_pnginfo, unique_id, resolved_prompt=""):
+        if not isinstance(extra_pnginfo, dict):
+            return None
+        workflow_node = self._find_workflow_node(extra_pnginfo.get("workflow"), unique_id)
+        properties = workflow_node.get("properties") if isinstance(workflow_node, dict) else None
+        if not isinstance(properties, dict):
+            return None
+        selected = self._parse_selection_payload(properties.get(self.SELECTION_PROPERTY))
+        if not selected:
+            return None
+        return self._normalize_selected(selected, resolved_prompt)
+
+    def _record_resolved_prompt(self, prompt, extra_pnginfo, unique_id, resolved_prompt, selected):
+        unique_id_text = str(unique_id) if unique_id is not None else ""
+        selected = self._normalize_selected(selected, resolved_prompt)
+
+        if isinstance(prompt, dict) and unique_id_text:
+            prompt_node = prompt.get(unique_id_text) or prompt.get(unique_id)
+            if isinstance(prompt_node, dict):
+                inputs = prompt_node.setdefault("inputs", {})
+                if isinstance(inputs, dict):
+                    inputs["resolved_prompt"] = resolved_prompt
+
+        if not isinstance(extra_pnginfo, dict):
+            return
+
+        record = {
+            "node_id": unique_id_text,
+            "resolved_prompt": resolved_prompt,
+            "selected": selected,
+        }
+        records = extra_pnginfo.setdefault("anima_prompt_composer", {})
+        if not isinstance(records, dict):
+            records = {}
+            extra_pnginfo["anima_prompt_composer"] = records
+        records[unique_id_text or "last"] = record
+
+        workflow = extra_pnginfo.get("workflow")
+        workflow_node = self._find_workflow_node(workflow, unique_id_text)
+        if workflow_node:
+            self._set_workflow_widget_value(workflow_node, "resolved_prompt", resolved_prompt)
+            properties = workflow_node.get("properties")
+            if not isinstance(properties, dict):
+                properties = {}
+                workflow_node["properties"] = properties
+            properties[self.SELECTION_PROPERTY] = selected
+
+    def _truthy(self, value, default=False):
+        if isinstance(value, bool):
+            return value
+        if value is None:
+            return default
+        if isinstance(value, (int, float)):
+            return value != 0
+        value_text = str(value).strip().lower()
+        if value_text in ("true", "1", "yes", "on"):
+            return True
+        if value_text in ("false", "0", "no", "off"):
+            return False
+        return default
+
+    def _int_value(self, value, default=0):
+        try:
+            return int(value)
+        except Exception:
+            return default
+
+    def _resolve_prompt_data(
         self,
         enable_artist,
         enable_character,
         enable_clothing,
+        enable_background,
+        enable_pose,
         character_detail,
         seed,
         artist_count,
-        preview_collapsed,
     ):
         import random
 
         artist_data = self._load_js_array("data.js")
         character_data = self._load_js_array("character_data.js")
         clothing_data = self._load_js_array("clothing_data.js")
+        background_data = self._load_js_array("background_data.js")
+        pose_data = self._load_js_array("pose_data.js")
         official_data = self._load_json_object("character_official_data.json")
 
-        try:
-            seed_value = int(seed)
-        except Exception:
-            seed_value = -1
+        seed_value = self._int_value(seed, -1)
         rng = random.SystemRandom() if seed_value < 0 else random.Random(seed_value)
 
-        artist_items = self._pick_items(artist_data, artist_count, rng) if enable_artist else []
-        character_items = self._pick_items(character_data, 1, rng) if enable_character else []
-        clothing_items = self._pick_items(clothing_data, 1, rng) if enable_clothing else []
+        artist_items = self._pick_items(artist_data, self._int_value(artist_count, 1), rng) if self._truthy(enable_artist, True) else []
+        character_items = self._pick_items(character_data, 1, rng) if self._truthy(enable_character, True) else []
+        clothing_items = self._pick_items(clothing_data, 1, rng) if self._truthy(enable_clothing, True) else []
+        background_items = self._pick_items(background_data, 1, rng) if self._truthy(enable_background, True) else []
+        pose_items = self._pick_items(pose_data, 1, rng) if self._truthy(enable_pose, True) else []
 
         selected = {
             "artist": [entry for entry in (self._artist_entry(item) for item in artist_items) if entry],
             "character": [entry for entry in (self._character_entry(item, official_data) for item in character_items) if entry],
             "clothing": [entry for entry in (self._clothing_entry(item) for item in clothing_items) if entry],
+            "background": [entry for entry in (self._background_entry(item) for item in background_items) if entry],
+            "pose": [entry for entry in (self._pose_entry(item) for item in pose_items) if entry],
         }
 
         output_parts = []
@@ -662,12 +1234,62 @@ class AnimaPromptComposer:
         self._append_parts(output_parts, seen, selected["artist"], "artist", character_detail)
         self._append_parts(output_parts, seen, selected["character"], "character", character_detail)
         self._append_parts(output_parts, seen, selected["clothing"], "clothing", character_detail)
+        self._append_parts(output_parts, seen, selected["background"], "background", character_detail)
+        self._append_parts(output_parts, seen, selected["pose"], "pose", character_detail)
 
         text = ", ".join(output_parts)
         if text:
             text += ", "
 
-        return {"ui": {"anima_prompt_composer": [selected]}, "result": (text,)}
+        selected["_resolved_prompt"] = text
+        return selected, text
+
+    def _extract_resolved_prompt_text(self, value):
+        text = str(value or "")
+        payload = self._parse_selection_payload(text)
+        if not payload:
+            return text
+        if isinstance(payload, dict) and isinstance(payload.get("_resolved_prompt"), str):
+            return payload.get("_resolved_prompt") or ""
+        return text
+
+    def compose_prompt(
+        self,
+        enable_artist,
+        enable_character,
+        enable_clothing,
+        enable_background,
+        enable_pose,
+        character_detail,
+        seed,
+        artist_count,
+        preview_collapsed,
+        resolved_prompt="",
+        prompt=None,
+        extra_pnginfo=None,
+        unique_id=None,
+    ):
+        text = self._extract_resolved_prompt_text(resolved_prompt)
+        if text:
+            selected = (
+                self._selection_from_workflow(extra_pnginfo, unique_id, text)
+                or self._normalize_selected(self._parse_selection_payload(resolved_prompt), text)
+            )
+        else:
+            selected, text = self._resolve_prompt_data(
+                enable_artist,
+                enable_character,
+                enable_clothing,
+                enable_background,
+                enable_pose,
+                character_detail,
+                seed,
+                artist_count,
+            )
+        selected["_resolved_prompt"] = text
+        self._record_resolved_prompt(prompt, extra_pnginfo, unique_id, text, selected)
+
+        return {"ui": {"anima_prompt_composer": [selected], "resolved_prompt": [text]}, "result": (text,)}
 
 class AnimaMultiLoraLoader:
     @classmethod
@@ -759,6 +1381,10 @@ NODE_CLASS_MAPPINGS = {
     "AnimaClothingTagSelectorPlus": AnimaClothingTagSelectorPlus,
     "AnimaBackgroundTagSelector": AnimaBackgroundTagSelector,
     "AnimaBackgroundTagSelectorPlus": AnimaBackgroundTagSelectorPlus,
+    "AnimaPoseTagSelector": AnimaPoseTagSelector,
+    "AnimaPoseTagSelectorPlus": AnimaPoseTagSelectorPlus,
+    "AnimaPromptPlus": AnimaPromptPlus,
+    "AnimaPromptPlusClipEncode": AnimaPromptPlusClipEncode,
     "AnimaPromptComposer": AnimaPromptComposer,
     "AnimaMultiLoraLoader": AnimaMultiLoraLoader,
 }
@@ -772,7 +1398,11 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "AnimaClothingTagSelectorPlus": "Anima Clothing Tag Selector+",
     "AnimaBackgroundTagSelector": "Anima Background Tag Selector",
     "AnimaBackgroundTagSelectorPlus": "Anima Background Tag Selector+",
-    "AnimaPromptComposer": "Anima Prompt Composer",
+    "AnimaPoseTagSelector": "Anima Pose Tag Selector",
+    "AnimaPoseTagSelectorPlus": "Anima Pose Tag Selector+",
+    "AnimaPromptPlus": "Anima Prompt",
+    "AnimaPromptPlusClipEncode": "Anima Prompt Plus",
+    "AnimaPromptComposer": "Anima Prompt Random Draw",
     "AnimaMultiLoraLoader": "Anima Multi LoRA Loader",
 }
 
@@ -792,12 +1422,272 @@ import urllib.parse
 import urllib.request
 from io import BytesIO
 from .anima_cache import get_cache
-
+from pathlib import Path
 try:
     from PIL import Image
 except ImportError:
     Image = None
 
+SELECTOR_RANDOM_PROPERTY = "anima_selector_random"
+
+SELECTOR_RANDOM_INPUTS = {
+    "AnimaArtistTagSelector": {"artist": "artist_tags"},
+    "AnimaArtistTagSelectorPlus": {"artist": "artist_tags"},
+    "AnimaCharacterTagSelector": {"character": "character_tags"},
+    "AnimaCharacterTagSelectorPlus": {"character": "character_tags"},
+    "AnimaClothingTagSelector": {"clothing": "clothing_tags"},
+    "AnimaClothingTagSelectorPlus": {"clothing": "clothing_tags"},
+    "AnimaBackgroundTagSelector": {"background": "background_tags"},
+    "AnimaBackgroundTagSelectorPlus": {"background": "background_tags"},
+    "AnimaPoseTagSelector": {"pose": "pose_tags"},
+    "AnimaPoseTagSelectorPlus": {"pose": "pose_tags"},
+    "AnimaPromptPlus": {
+        "artist": "artist_tags",
+        "character": "character_tags",
+        "clothing": "clothing_tags",
+        "pose": "pose_tags",
+        "background": "background_tags",
+    },
+    "AnimaPromptPlusClipEncode": {
+        "artist": "artist_tags",
+        "character": "character_tags",
+        "clothing": "clothing_tags",
+        "pose": "pose_tags",
+        "background": "background_tags",
+    },
+}
+
+SELECTOR_WIDGET_ORDERS = {
+    "AnimaArtistTagSelector": ["artist_tags", "mode"],
+    "AnimaArtistTagSelectorPlus": ["artist_tags", "extra_text", "separator"],
+    "AnimaCharacterTagSelector": ["character_tags", "mode"],
+    "AnimaCharacterTagSelectorPlus": ["character_tags", "extra_text", "separator"],
+    "AnimaClothingTagSelector": ["clothing_tags", "mode"],
+    "AnimaClothingTagSelectorPlus": ["clothing_tags", "extra_text", "separator"],
+    "AnimaBackgroundTagSelector": ["background_tags", "mode"],
+    "AnimaBackgroundTagSelectorPlus": ["background_tags", "extra_text", "separator"],
+    "AnimaPoseTagSelector": ["pose_tags", "mode"],
+    "AnimaPoseTagSelectorPlus": ["pose_tags", "extra_text", "separator"],
+    "AnimaPromptPlus": [
+        "quality_prompt",
+        "artist_tags",
+        "character_tags",
+        "clothing_tags",
+        "pose_tags",
+        "background_tags",
+        "extra_prompt",
+        "separator",
+    ],
+    "AnimaPromptPlusClipEncode": [
+        "quality_prompt",
+        "artist_tags",
+        "character_tags",
+        "clothing_tags",
+        "pose_tags",
+        "background_tags",
+        "extra_prompt",
+        "separator",
+    ],
+}
+
+def _selector_random_state(workflow_node):
+    if not isinstance(workflow_node, dict):
+        return {}
+    properties = workflow_node.get("properties")
+    if not isinstance(properties, dict):
+        return {}
+    state = properties.get(SELECTOR_RANDOM_PROPERTY)
+    return state if isinstance(state, dict) else {}
+
+def _selector_random_enabled(workflow_node, section):
+    value = _selector_random_state(workflow_node).get(section)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    return str(value or "").strip().lower() in ("true", "1", "yes", "on")
+
+def _set_selector_workflow_widget_value(workflow_node, class_type, input_name, value):
+    if not isinstance(workflow_node, dict):
+        return
+    widgets_values = workflow_node.get("widgets_values")
+    if isinstance(widgets_values, dict):
+        widgets_values[input_name] = value
+        return
+    if not isinstance(widgets_values, list):
+        return
+    order = SELECTOR_WIDGET_ORDERS.get(class_type) or []
+    try:
+        index = order.index(input_name)
+    except ValueError:
+        return
+    while len(widgets_values) <= index:
+        widgets_values.append("")
+    widgets_values[index] = value
+
+def _selector_random_text(composer, section):
+    selected, text = composer._resolve_prompt_data(
+        section == "artist",
+        section == "character",
+        section == "clothing",
+        section == "background",
+        section == "pose",
+        "trigger",
+        -1,
+        1,
+    )
+    return text, selected.get(section, [])
+
+def _record_selector_random(extra_pnginfo, node_id, class_type, section, input_name, text, selected):
+    if not isinstance(extra_pnginfo, dict):
+        return
+    records = extra_pnginfo.setdefault("anima_selector_random", {})
+    if not isinstance(records, dict):
+        records = {}
+        extra_pnginfo["anima_selector_random"] = records
+    records[f"{node_id}:{section}"] = {
+        "node_id": str(node_id),
+        "class_type": class_type,
+        "section": section,
+        "input": input_name,
+        "text": text,
+        "selected": selected,
+    }
+
+def _resolve_anima_selector_random_nodes(prompt, extra_pnginfo, composer):
+    workflow = extra_pnginfo.get("workflow") if isinstance(extra_pnginfo, dict) else None
+    for node_id, node in list(prompt.items()):
+        if not isinstance(node, dict):
+            continue
+        class_type = node.get("class_type")
+        section_inputs = SELECTOR_RANDOM_INPUTS.get(class_type)
+        if not section_inputs:
+            continue
+
+        workflow_node = composer._find_workflow_node(workflow, node_id)
+        if not workflow_node:
+            continue
+        inputs = node.setdefault("inputs", {})
+        if not isinstance(inputs, dict):
+            continue
+
+        for section, input_name in section_inputs.items():
+            if not _selector_random_enabled(workflow_node, section):
+                continue
+            current_value = inputs.get(input_name)
+            if isinstance(current_value, list):
+                continue
+            text, selected = _selector_random_text(composer, section)
+            if not text:
+                continue
+            inputs[input_name] = text
+            _set_selector_workflow_widget_value(workflow_node, class_type, input_name, text)
+            _record_selector_random(extra_pnginfo, node_id, class_type, section, input_name, text, selected)
+
+def _resolve_anima_prompt_plus_clip_nodes(prompt, extra_pnginfo, prompt_plus):
+    updates = {}
+    for node_id, node in list(prompt.items()):
+        if not isinstance(node, dict) or node.get("class_type") != "AnimaPromptPlusClipEncode":
+            continue
+        inputs = node.setdefault("inputs", {})
+        if not isinstance(inputs, dict):
+            continue
+
+        resolved_text = prompt_plus._compose_prompt_text(
+            inputs.get("quality_prompt", ""),
+            inputs.get("artist_tags", ""),
+            inputs.get("character_tags", ""),
+            inputs.get("clothing_tags", ""),
+            inputs.get("pose_tags", ""),
+            inputs.get("background_tags", ""),
+            inputs.get("extra_prompt", ""),
+            inputs.get("separator", ", "),
+        )
+        inputs["text"] = resolved_text
+
+        if isinstance(extra_pnginfo, dict):
+            records = extra_pnginfo.setdefault("anima_prompt", {})
+            if not isinstance(records, dict):
+                records = {}
+                extra_pnginfo["anima_prompt"] = records
+            records[str(node_id)] = {"positive": resolved_text}
+
+        updates[str(node_id)] = {
+            "quality_prompt": inputs.get("quality_prompt", ""),
+            "artist_tags": inputs.get("artist_tags", ""),
+            "character_tags": inputs.get("character_tags", ""),
+            "clothing_tags": inputs.get("clothing_tags", ""),
+            "pose_tags": inputs.get("pose_tags", ""),
+            "background_tags": inputs.get("background_tags", ""),
+            "extra_prompt": inputs.get("extra_prompt", ""),
+            "separator": inputs.get("separator", ", "),
+        }
+    return updates
+
+def _install_anima_prompt_composer_queue_resolver():
+    if getattr(PromptServer.instance, "_anima_prompt_composer_resolver_installed", False):
+        return
+    PromptServer.instance._anima_prompt_composer_resolver_installed = True
+
+    def resolve_anima_prompt_composer_nodes(json_data):
+        try:
+            prompt = json_data.get("prompt")
+            if not isinstance(prompt, dict):
+                return json_data
+
+            extra_data = json_data.setdefault("extra_data", {})
+            if not isinstance(extra_data, dict):
+                return json_data
+            extra_pnginfo = extra_data.setdefault("extra_pnginfo", {})
+            if not isinstance(extra_pnginfo, dict):
+                return json_data
+
+            composer = AnimaPromptComposer()
+            _resolve_anima_selector_random_nodes(prompt, extra_pnginfo, composer)
+            prompt_plus_updates = _resolve_anima_prompt_plus_clip_nodes(
+                prompt,
+                extra_pnginfo,
+                AnimaPromptPlus(),
+            )
+            if prompt_plus_updates:
+                PromptServer.instance.send_sync(
+                    "anima.prompt_plus_resolved",
+                    {"nodes": prompt_plus_updates},
+                    json_data.get("client_id"),
+                )
+
+            for node_id, node in list(prompt.items()):
+                if not isinstance(node, dict) or node.get("class_type") != "AnimaPromptComposer":
+                    continue
+                inputs = node.setdefault("inputs", {})
+                if not isinstance(inputs, dict):
+                    continue
+
+                selected, resolved_prompt = composer._resolve_prompt_data(
+                    inputs.get("enable_artist", True),
+                    inputs.get("enable_character", True),
+                    inputs.get("enable_clothing", True),
+                    inputs.get("enable_background", True),
+                    inputs.get("enable_pose", True),
+                    inputs.get("character_detail", "trigger"),
+                    inputs.get("seed", -1),
+                    inputs.get("artist_count", 1),
+                )
+                inputs["resolved_prompt"] = resolved_prompt
+                composer._record_resolved_prompt(
+                    prompt,
+                    extra_pnginfo,
+                    node_id,
+                    resolved_prompt,
+                    selected,
+                )
+        except Exception as e:
+            print(f"[Anima Tools] Failed to resolve random prompt metadata before queue: {e}")
+        return json_data
+
+    PromptServer.instance.add_on_prompt_handler(resolve_anima_prompt_composer_nodes)
+
+_install_anima_prompt_composer_queue_resolver()
 
 def get_favorites_path():
     try:
@@ -813,7 +1703,7 @@ def get_favorites_path():
     os.makedirs(user_dir, exist_ok=True)
     return os.path.join(user_dir, "anima_tools_favorites.json")
 
-FAVORITE_SECTIONS = ["artist", "character", "lora", "clothing", "background"]
+FAVORITE_SECTIONS = ["artist", "character", "lora", "clothing", "background", "pose"]
 
 def get_default_favorites_data():
     return {
@@ -837,6 +1727,10 @@ def get_default_favorites_data():
             "groups": [{"id": "default", "name": "默认收藏", "isSystem": True}],
             "items": [],
         },
+        "pose": {
+            "groups": [{"id": "default", "name": "默认收藏", "isSystem": True}],
+            "items": [],
+        },
     }
 
 
@@ -854,6 +1748,10 @@ def normalize_favorites_data(data):
             groups = default_data[key]["groups"].copy()
         elif not any(isinstance(g, dict) and g.get("id") == "default" for g in groups):
             groups = [default_data[key]["groups"][0], *groups]
+        for group in groups:
+            if isinstance(group, dict) and group.get("id") == "default" and group.get("isSystem", True):
+                group["name"] = "Default Favorites"
+                group["isSystem"] = True
         items = section.get("items")
         if not isinstance(items, list):
             items = []
@@ -1143,6 +2041,81 @@ def get_lora_root_infos() -> list[dict]:
 def get_lora_roots() -> list[str]:
     return [root_info["path"] for root_info in get_lora_root_infos()]
 
+def normalize_lora_filename(filename: str) -> str | None:
+    filename = str(filename or "").replace("\\", "/").strip()
+    if not filename or filename.endswith("/"):
+        return None
+    if os.path.isabs(filename) or Path(filename).is_absolute():
+        return None
+    parts = [part for part in filename.split("/") if part]
+    if any(part in (".", "..") for part in parts):
+        return None
+    return "/".join(parts)
+
+def is_relative_to_path(candidate: Path, root: Path) -> bool:
+    try:
+        candidate.relative_to(root)
+        return True
+    except ValueError:
+        try:
+            candidate_key = os.path.normcase(os.path.abspath(str(candidate)))
+            root_key = os.path.normcase(os.path.abspath(str(root)))
+            return os.path.commonpath([candidate_key, root_key]) == root_key
+        except ValueError:
+            return False
+
+def resolve_lora_root(root: str) -> Path | None:
+    try:
+        root_path = Path(root).expanduser().resolve()
+        if root_path.is_dir():
+            return root_path
+    except (OSError, RuntimeError):
+        return None
+    return None
+
+def resolve_lora_candidate_under_root(root: str, filename: str) -> str | None:
+    root_path = resolve_lora_root(root)
+    if root_path is None:
+        return None
+    try:
+        candidate = (root_path / filename.replace("/", os.sep)).resolve()
+    except (OSError, RuntimeError):
+        return None
+    if not is_relative_to_path(candidate, root_path):
+        return None
+    if candidate.exists():
+        return str(candidate)
+    return None
+
+def is_lora_path_contained(path: str) -> bool:
+    if not path:
+        return False
+    try:
+        candidate = Path(path).resolve()
+    except (OSError, RuntimeError):
+        return False
+    for root in get_lora_roots():
+        root_path = resolve_lora_root(root)
+        if root_path is not None and is_relative_to_path(candidate, root_path):
+            return True
+    return False
+
+def resolve_lora_companion_path(abs_path: str, extension: str, suffix: str = "", must_exist: bool = True) -> str | None:
+    if not abs_path or not extension.startswith("."):
+        return None
+    base_no_ext = os.path.splitext(abs_path)[0]
+    candidate = base_no_ext + suffix + extension
+    if must_exist and not os.path.exists(candidate):
+        return None
+    try:
+        resolved = Path(candidate).resolve()
+    except (OSError, RuntimeError):
+        return None
+    if not is_lora_path_contained(str(resolved)):
+        return None
+    if must_exist and not resolved.exists():
+        return None
+    return str(resolved)
 
 def scan_loras_with_info() -> list[dict]:
     results = []
@@ -1164,16 +2137,14 @@ def scan_loras_with_info() -> list[dict]:
 
 
 def resolve_lora_abs_path(filename: str) -> str | None:
+    filename = normalize_lora_filename(filename)
     if not filename:
-        return None
-    filename = filename.replace("\\", "/").strip()
-    if not filename or filename.endswith("/"):
         return None
 
     _, custom_dir_valid, custom_dir_abs = get_custom_lora_dir_status()
     if custom_dir_valid:
-        candidate = os.path.join(custom_dir_abs, filename.replace("/", os.sep))
-        if os.path.exists(candidate):
+        candidate = resolve_lora_candidate_under_root(custom_dir_abs, filename)
+        if candidate:
             return candidate
 
     try:
@@ -1181,12 +2152,12 @@ def resolve_lora_abs_path(filename: str) -> str | None:
     except Exception:
         abs_path = None
 
-    if abs_path and os.path.exists(abs_path):
-        return abs_path
+    if abs_path and os.path.exists(abs_path) and is_lora_path_contained(abs_path):
+        return str(Path(abs_path).resolve())
 
     for root in get_lora_roots():
-        candidate = os.path.join(root, filename.replace("/", os.sep))
-        if os.path.exists(candidate):
+        candidate = resolve_lora_candidate_under_root(root, filename)
+        if candidate:
             return candidate
     return None
 
@@ -1194,11 +2165,10 @@ def resolve_lora_abs_path(filename: str) -> str | None:
 def find_companion_preview(abs_path: str) -> str | None:
     if not abs_path:
         return None
-    base_no_ext = os.path.splitext(abs_path)[0]
     for ext in [".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm"]:
         for suffix in ["", ".preview"]:
-            preview_file = base_no_ext + suffix + ext
-            if os.path.exists(preview_file):
+            preview_file = resolve_lora_companion_path(abs_path, ext, suffix=suffix, must_exist=True)
+            if preview_file:
                 return preview_file
     return None
 
@@ -1223,8 +2193,8 @@ def make_display_name(filename: str) -> str:
 
 
 def read_lora_meta_summary(abs_path: str) -> tuple[str, dict]:
-    meta_path = os.path.splitext(abs_path)[0] + ".json"
-    if not os.path.exists(meta_path):
+    meta_path = resolve_lora_companion_path(abs_path, ".json", must_exist=True)
+    if not meta_path:
         return "missing", {}
     try:
         with open(meta_path, "r", encoding="utf-8") as f:
@@ -1440,11 +2410,10 @@ async def lora_local_metadata_api(request):
     try:
         filename = request.query.get("filename", "")
         if not filename:
-            return web.json_response(
-                {"success": False, "error": "Missing filename"}, status=400
-            )
-
-        filename = filename.replace("\\", "/")
+            return web.json_response({"success": False, "error": "Missing filename"}, status=400)
+        filename = normalize_lora_filename(filename)
+        if not filename:
+            return web.json_response({"success": False, "error": "Invalid filename"}, status=400)
 
         # Try metadata cache first
         if filename in _LOCAL_METADATA_CACHE:
@@ -1455,7 +2424,9 @@ async def lora_local_metadata_api(request):
         abs_path = resolve_lora_abs_path(filename)
 
         if abs_path and os.path.exists(abs_path):
-            meta_path = os.path.splitext(abs_path)[0] + ".json"
+            meta_path = resolve_lora_companion_path(abs_path, ".json", must_exist=False)
+            if not meta_path:
+                return web.json_response({"success": False, "error": "Invalid metadata path"}, status=403)
 
             # 1. 优先读取已存在的本地 JSON 配置文件（支持旧版格式自动升级与自愈）
             if os.path.exists(meta_path):
@@ -1546,8 +2517,8 @@ async def lora_local_metadata_api(request):
                             elif ".webp" in preview_url.lower():
                                 preview_ext = ".webp"
 
-                            preview_path = os.path.splitext(abs_path)[0] + preview_ext
-                            if not os.path.exists(preview_path):
+                            preview_path = resolve_lora_companion_path(abs_path, preview_ext, must_exist=False)
+                            if preview_path and not os.path.exists(preview_path):
                                 # 后台多线程异步下载图片，防止阻塞 metadata 请求
                                 threading.Thread(
                                     target=download_preview_image,
@@ -1573,6 +2544,7 @@ async def lora_local_metadata_api(request):
 # 缩略图磁盘缓存目录，放在 user 下以便 ComfyUI 重启和插件升级后继续复用
 _THUMB_CACHE_DIR = os.path.join(get_anima_tools_user_dir(), "thumb_cache")
 _REMOTE_THUMB_CACHE_DIR = os.path.join(get_anima_tools_user_dir(), "remote_thumb_cache")
+_REMOTE_THUMB_INDEX_PATH = os.path.join(_REMOTE_THUMB_CACHE_DIR, "index.json")
 _LOCAL_THUMB_JOBS = set()
 _LOCAL_THUMB_QUEUE = []
 _LOCAL_THUMB_WORKER_ACTIVE = False
@@ -1620,9 +2592,9 @@ def _ensure_local_preview_download_async(
         or not image_url.lower().startswith(("http://", "https://"))
     ):
         return
-    preview_path = os.path.splitext(abs_path)[0] + _preview_extension_from_url(
-        image_url
-    )
+    preview_path = resolve_lora_companion_path(abs_path, _preview_extension_from_url(image_url), must_exist=False)
+    if not preview_path:
+        return
     if os.path.exists(preview_path):
         return
     job_key = f"{preview_path}:{image_url}"
@@ -1755,13 +2727,11 @@ def _placeholder_svg_response(cache_control: str = "no-store") -> web.Response:
 
 _REMOTE_THUMB_JOBS = set()
 _REMOTE_THUMB_LOCK = threading.Lock()
-_REMOTE_THUMB_INDEX_PATH = os.path.join(_REMOTE_THUMB_CACHE_DIR, "index.json")
 _REMOTE_THUMB_INDEX_LOCK = threading.Lock()
 _CIVITAI_UUID_RE = re.compile(
     r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
-    re.IGNORECASE,
+    re.IGNORECASE
 )
-
 
 def _clear_cache_directory(directory: str) -> tuple[int, int, list[str]]:
     deleted_count = 0
@@ -1903,23 +2873,16 @@ def _remote_thumb_stable_cache_key(
             return f"civitai{safe_image_id}"
     if source_url:
         normalized_url = _normalize_remote_source_url(source_url)
-        return hashlib.sha256(
-            normalized_url.encode("utf-8", errors="ignore")
-        ).hexdigest()
+        return hashlib.sha256(normalized_url.encode("utf-8", errors="ignore")).hexdigest()
     return "".join(ch for ch in url_hash if ch.isalnum()) or ""
 
-
-def _remote_thumb_cache_keys(
-    source_url: str, image_id: str, url_hash: str
-) -> list[str]:
+def _remote_thumb_cache_keys(source_url: str, image_id: str, url_hash: str) -> list[str]:
     keys = []
     stable_key = _remote_thumb_stable_cache_key(source_url, image_id, url_hash)
     if stable_key:
         keys.append(stable_key)
     if source_url:
-        legacy_key = hashlib.sha256(
-            source_url.encode("utf-8", errors="ignore")
-        ).hexdigest()
+        legacy_key = hashlib.sha256(source_url.encode("utf-8", errors="ignore")).hexdigest()
         keys.append(legacy_key)
     if url_hash:
         keys.append(url_hash)
@@ -1930,10 +2893,7 @@ def _remote_thumb_cache_keys(
             unique_keys.append(key)
     return unique_keys
 
-
-def _write_remote_thumbnail_content(
-    cache_key: str, width: int, thumb_data: bytes
-) -> str:
+def _write_remote_thumbnail_content(cache_key: str, width: int, thumb_data: bytes) -> str:
     os.makedirs(_REMOTE_THUMB_CACHE_DIR, exist_ok=True)
     content_hash = hashlib.sha256(thumb_data).hexdigest()
     content_path = _remote_thumb_content_cache_path(content_hash, width)
@@ -1945,18 +2905,13 @@ def _write_remote_thumbnail_content(
     _set_remote_thumb_index(cache_key, width, content_path)
     return content_path
 
-
-def _download_remote_thumbnail(
-    url: str, cache_key: str, width: int, job_key: str
-) -> None:
+def _download_remote_thumbnail(url: str, cache_key: str, width: int, job_key: str) -> None:
     try:
         if Image is None:
             return
         if _find_remote_thumb_indexed_path(cache_key, width):
             return
-        req = urllib.request.Request(
-            url, headers={"User-Agent": "ComfyUI-Anima-Tools/1.0"}
-        )
+        req = urllib.request.Request(url, headers={"User-Agent": "ComfyUI-Anima-Tools/1.0"})
         with urllib.request.urlopen(req, timeout=30) as resp:
             data = resp.read()
 
@@ -2013,14 +2968,11 @@ async def lora_remote_preview_api(request):
                     threading.Thread(
                         target=_download_remote_thumbnail,
                         args=(source_url, cache_key, width, job_key),
-                        daemon=True,
+                        daemon=True
                     ).start()
 
         if miss_mode == "error":
-            return web.Response(
-                status=202,
-                headers={"Cache-Control": "no-store", "Retry-After": "1"},
-            )
+            return web.Response(status=202, headers={"Cache-Control": "no-store", "Retry-After": "1"})
         return _placeholder_svg_response("no-store")
     except web.HTTPException:
         raise
@@ -2041,8 +2993,10 @@ async def lora_local_preview_api(request):
             target_width = int(request.query.get("width", "0"))
         except (ValueError, TypeError):
             target_width = 0
-
-        filename = filename.replace("\\", "/")
+            
+        filename = normalize_lora_filename(filename)
+        if not filename:
+            return web.Response(status=400)
         abs_path = resolve_lora_abs_path(filename)
 
         if abs_path and os.path.exists(abs_path):
@@ -2180,8 +3134,10 @@ def delete_local_lora_files(filename: str) -> bool:
     """Helper to delete a local LoRA model and its companion meta files."""
     try:
         # 统一将反斜杠替换为正斜杠，防止 Windows 路径转义解析错误
-        filename = filename.replace("\\", "/")
-
+        filename = normalize_lora_filename(filename)
+        if not filename:
+            return False
+        
         # Invalidate metadata cache
         _LOCAL_METADATA_CACHE.pop(filename, None)
 
@@ -2189,9 +3145,11 @@ def delete_local_lora_files(filename: str) -> bool:
 
         if not abs_path:
             return False
-
-        abs_path = os.path.normpath(abs_path)
-
+            
+        abs_path = str(Path(abs_path).resolve())
+        if not is_lora_path_contained(abs_path):
+            return False
+        
         if not os.path.exists(abs_path):
             # 如果主模型文件都不存在，我们也尝试看看有没有残留的伴随文件
             print(
@@ -2199,11 +3157,10 @@ def delete_local_lora_files(filename: str) -> bool:
             )
 
         # 1. 尝试删除 companion JSON metadata
-        base_no_ext = os.path.splitext(abs_path)[0]
-        meta_file = base_no_ext + ".json"
+        meta_file = resolve_lora_companion_path(abs_path, ".json", must_exist=True)
         deleted_any = False
-
-        if os.path.exists(meta_file):
+        
+        if meta_file:
             try:
                 os.remove(meta_file)
                 print(
@@ -2219,8 +3176,8 @@ def delete_local_lora_files(filename: str) -> bool:
         preview_extensions = [".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm"]
         for ext in preview_extensions:
             for suffix in ["", ".preview"]:
-                preview_file = base_no_ext + suffix + ext
-                if os.path.exists(preview_file):
+                preview_file = resolve_lora_companion_path(abs_path, ext, suffix=suffix, must_exist=True)
+                if preview_file:
                     try:
                         os.remove(preview_file)
                         print(
@@ -2234,7 +3191,7 @@ def delete_local_lora_files(filename: str) -> bool:
 
         # 3. 尝试删除主模型文件
         model_deleted = False
-        if os.path.exists(abs_path):
+        if os.path.exists(abs_path) and is_lora_path_contained(abs_path):
             try:
                 os.remove(abs_path)
                 print(f"[Anima Tools] Successfully deleted main model file: {abs_path}")

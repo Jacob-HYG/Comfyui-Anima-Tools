@@ -2,6 +2,7 @@ import { app } from "../../scripts/app.js";
 import { t } from "./i18n.js";
 import { markImageLoaded, isImageLoaded } from "./anima_image_utils.js";
 import { createPromoLinks } from "./anima_promo_links.js";
+import { addSelectorActionRow, installSelectorExecutionSync, isAnimaPromptPlusNode } from "./anima_selector_random.js";
 import "./character_data.js";
 
 let characterOfficialDataPromise = null;
@@ -33,13 +34,15 @@ app.registerExtension({
     name: "AnimaCharacterTagSelector.extension",
 
     async beforeRegisterNodeDef(nodeType, nodeData, app) {
-        if (nodeData.name === "AnimaCharacterTagSelector" || nodeData.name === "AnimaCharacterTagSelectorPlus") {
+        if (nodeData.name === "AnimaCharacterTagSelector" || nodeData.name === "AnimaCharacterTagSelectorPlus" || isAnimaPromptPlusNode(nodeData.name)) {
+            installSelectorExecutionSync(nodeType);
             const origOnCreated = nodeType.prototype.onNodeCreated;
             nodeType.prototype.onNodeCreated = function () {
                 origOnCreated?.apply(this, arguments);
 
                 // 找到 character_tags widget
                 const characterTagsWidget = this.widgets.find(w => w.name === "character_tags");
+                if (!characterTagsWidget) return;
 
                 // 确保 _character_names 隐藏 widget 存在（供后端 characters 输出端口使用）
                 let characterNamesWidget = this.widgets.find(w => w.name === "_character_names");
@@ -65,34 +68,20 @@ app.registerExtension({
                     characterNamesWidget.inputEl.style.visibility = "hidden";
                 }
                 
-                // 添加打开选择器的按钮，并注入极致 premium 设计的霓虹粉发光样式
-                const btnWidget = this.addWidget("button", t("Open Character Selector"), null, async () => {
-                    if (!window.characterData) {
-                        alert(t("Anima character database is loading, please wait a few seconds..."));
-                        return;
-                    }
-                    ensureCharacterOfficialData();
-                    await openCharacterSelectorModal(this, characterTagsWidget);
+                addSelectorActionRow(this, {
+                    section: "character",
+                    label: t("Open Character Selector"),
+                    accent: "#db2777",
+                    accentText: "#f472b6",
+                    onOpen: async () => {
+                        if (!window.characterData) {
+                            alert(t("Anima character database is loading, please wait a few seconds..."));
+                            return;
+                        }
+                        ensureCharacterOfficialData();
+                        await openCharacterSelectorModal(this, characterTagsWidget);
+                    },
                 });
-
-                // 给按钮增加精致边框与微动画
-                if (btnWidget && btnWidget.el) {
-                    btnWidget.el.style.cssText += `
-                        border: 1px solid rgba(219, 39, 119, 0.4) !important;
-                        background: linear-gradient(135deg, rgba(219, 39, 119, 0.1), rgba(157, 23, 77, 0.15)) !important;
-                        color: #f472b6 !important;
-                        font-weight: 600 !important;
-                        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
-                    `;
-                    btnWidget.el.onmouseover = () => {
-                        btnWidget.el.style.boxShadow = "0 0 12px rgba(219, 39, 119, 0.35)";
-                        btnWidget.el.style.background = "linear-gradient(135deg, rgba(219, 39, 119, 0.25), rgba(157, 23, 77, 0.3))";
-                    };
-                    btnWidget.el.onmouseout = () => {
-                        btnWidget.el.style.boxShadow = "none";
-                        btnWidget.el.style.background = "linear-gradient(135deg, rgba(219, 39, 119, 0.1), rgba(157, 23, 77, 0.15))";
-                    };
-                }
             };
         }
     }
@@ -1173,6 +1162,32 @@ async function openCharacterSelectorModal(node, tagsWidget) {
             color: #f472b6 !important;
             font-weight: 700 !important;
         }
+        .sidebar-clear-filters-btn {
+            width: calc(100% - 16px);
+            margin: 0 8px 12px;
+            padding: 9px 12px;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(255, 255, 255, 0.035);
+            color: #a1a1aa;
+            font-size: 12.5px;
+            font-weight: 750;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 7px;
+            transition: all 0.18s ease;
+        }
+        .sidebar-clear-filters-btn:hover:not(:disabled) {
+            background: rgba(219, 39, 119, 0.13);
+            border-color: rgba(219, 39, 119, 0.32);
+            color: #f9a8d4;
+        }
+        .sidebar-clear-filters-btn:disabled {
+            opacity: 0.42;
+            cursor: not-allowed;
+        }
         
         /* 分页器按钮样式 */
         .anima-pagination {
@@ -2062,6 +2077,20 @@ async function openCharacterSelectorModal(node, tagsWidget) {
     function renderSidebar() {
         sidebarList.innerHTML = "";
 
+        const clearFiltersBtn = document.createElement("button");
+        clearFiltersBtn.type = "button";
+        clearFiltersBtn.className = "sidebar-clear-filters-btn";
+        clearFiltersBtn.innerHTML = `
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+            <span>${t("Clear Filters")}</span>
+        `;
+        clearFiltersBtn.disabled = !hasActiveSidebarFilters();
+        clearFiltersBtn.onclick = clearSidebarFilters;
+        sidebarList.appendChild(clearFiltersBtn);
+
         // 1. 获取各个分组的折叠状态 (默认全部折叠，localStorage 记录的 "false" 代表展开)
         const foldStates = {
             gender: localStorage.getItem("anima-char-fold-gender") !== "false",
@@ -2485,6 +2514,33 @@ async function openCharacterSelectorModal(node, tagsWidget) {
 
         seriesContainer.appendChild(seriesContentEl);
         sidebarList.appendChild(seriesContainer);
+    }
+
+    function hasActiveSidebarFilters() {
+        return activeFilters.type !== "all" ||
+            !!activeFilters.gender ||
+            !!activeFilters.hair ||
+            !!activeFilters.eye ||
+            !!activeFilters.series;
+    }
+
+    function clearSidebarFilters() {
+        if (!hasActiveSidebarFilters()) return;
+        activeFilters = {
+            type: "all",
+            gender: null,
+            hair: null,
+            eye: null,
+            series: null
+        };
+        localStorage.setItem(SIDEBAR_STORAGE_KEY, JSON.stringify(activeFilters));
+        currentPage = 1;
+        localStorage.setItem(PAGE_STORAGE_KEY, 1);
+        lastScrollTop = 0;
+        localStorage.setItem(SCROLL_STORAGE_KEY, 0);
+        renderSidebar();
+        triggerFilter();
+        listContainer.scrollTop = 0;
     }
 
     // 切换分类侧边栏 (支持联合多维过滤)

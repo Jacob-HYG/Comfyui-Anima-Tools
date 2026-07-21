@@ -15,7 +15,7 @@ import {
     showToast as showSharedToast,
     splitPromptTokens,
 } from "./anima_selector_ui.js";
-import "./background_data.js";
+import "./pose_data.js";
 
 const THEME = {
     accent: "#db2777",
@@ -25,37 +25,41 @@ const THEME = {
 };
 
 const CATEGORY_LIST = [
-    "Nature & Outdoors",
-    "Urban & Daily",
-    "Fantasy & Sci-Fi",
-    "Minimalist & Abstract",
+    "Gestures & Arms",
+    "Standing & Dynamic",
+    "Sitting Poses",
+    "Lying & Prone",
+    "Adjusting & Dressing",
+    "Props & Holding",
+    "Duo & Interaction",
+    "Daily & Miscellaneous",
 ];
 
 const TRAITS_TRANSLATION = {};
 
 app.registerExtension({
-    name: "AnimaBackgroundTagSelector.extension",
+    name: "AnimaPoseTagSelector.extension",
 
     async beforeRegisterNodeDef(nodeType, nodeData) {
-        if (nodeData.name === "AnimaBackgroundTagSelector" || nodeData.name === "AnimaBackgroundTagSelectorPlus" || isAnimaPromptPlusNode(nodeData.name)) {
+        if (nodeData.name === "AnimaPoseTagSelector" || nodeData.name === "AnimaPoseTagSelectorPlus" || isAnimaPromptPlusNode(nodeData.name)) {
             installSelectorExecutionSync(nodeType);
             const origOnCreated = nodeType.prototype.onNodeCreated;
             nodeType.prototype.onNodeCreated = function () {
                 origOnCreated?.apply(this, arguments);
 
-                const backgroundTagsWidget = this.widgets.find(w => w.name === "background_tags");
-                if (!backgroundTagsWidget) return;
+                const poseTagsWidget = this.widgets.find(w => w.name === "pose_tags");
+                if (!poseTagsWidget) return;
                 addSelectorActionRow(this, {
-                    section: "background",
-                    label: t("Open Background Selector"),
+                    section: "pose",
+                    label: t("Open Pose Selector"),
                     accent: THEME.accent,
                     accentText: THEME.accentText,
                     onOpen: async () => {
-                        if (!window.backgroundData) {
-                            alert(t("Anima background database is loading, please wait a few seconds..."));
+                        if (!window.poseData) {
+                            alert(t("Anima pose database is loading, please wait a few seconds..."));
                             return;
                         }
-                        await openBackgroundSelectorModal(this, backgroundTagsWidget);
+                        await openPoseSelectorModal(this, poseTagsWidget);
                     },
                 });
             };
@@ -98,23 +102,14 @@ function getTraitZh(trait, data) {
     return trait;
 }
 
-// 构造缓存代理 URL (供图片加载使用)
-function getCacheProxyUrl(previewUrl) {
-    return `/anima-tools/cached-image?namespace=anima_background_selector&url=${encodeURIComponent(previewUrl)}`;
-}
-// 构造只读缓存代理 URL（Cache ON 时使用，不下 CDN）
-function getReadonlyProxyUrl(previewUrl, bustVersion) {
-    return `/anima-tools/cached-image?readonly=1&_cb=${bustVersion}&namespace=anima_background_selector&url=${encodeURIComponent(previewUrl)}`;
-}
-
-async function openBackgroundSelectorModal(node, tagsWidget) {
-    const backgroundData = Array.isArray(window.backgroundData) ? window.backgroundData : [];
-    const dataById = new Map(backgroundData.map(item => [String(item.id), item]));
+async function openPoseSelectorModal(node, tagsWidget) {
+    const poseData = Array.isArray(window.poseData) ? window.poseData : [];
+    const dataById = new Map(poseData.map(item => [String(item.id), item]));
     // Keep selection one-way: existing node text should not auto-check cards in the modal.
-    const selectedBackground = new Set();
+    const selectedPose = new Set();
 
     let favoritesConfig = {
-        background: {
+        pose: {
             groups: [{ id: "default", name: t("My Favorites"), isSystem: true }],
             items: [],
         }
@@ -126,24 +121,24 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
             favoritesConfig = await response.json();
         }
     } catch (e) {
-        console.error("[Anima Tools] Failed to load background favorites", e);
+        console.error("[Anima Tools] Failed to load pose favorites", e);
     }
 
-    if (!favoritesConfig.background) {
-        favoritesConfig.background = {
+    if (!favoritesConfig.pose) {
+        favoritesConfig.pose = {
             groups: [{ id: "default", name: t("My Favorites"), isSystem: true }],
             items: [],
         };
     }
 
-    let groups = Array.isArray(favoritesConfig.background.groups) && favoritesConfig.background.groups.length
-        ? favoritesConfig.background.groups
+    let groups = Array.isArray(favoritesConfig.pose.groups) && favoritesConfig.pose.groups.length
+        ? favoritesConfig.pose.groups
         : [{ id: "default", name: t("My Favorites"), isSystem: true }];
     if (!groups.some(group => group.id === "default")) {
         groups = [{ id: "default", name: t("My Favorites"), isSystem: true }, ...groups];
     }
 
-    let favoriteItems = Array.isArray(favoritesConfig.background.items) ? favoritesConfig.background.items : [];
+    let favoriteItems = Array.isArray(favoritesConfig.pose.items) ? favoritesConfig.pose.items : [];
     const favoriteMap = new Map();
     const favoriteSet = new Set();
 
@@ -158,15 +153,13 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
         }
     });
 
-    const SORT_STORAGE_KEY = "anima-background-selector-active-sort";
-    const PAGE_STORAGE_KEY = "anima-background-selector-active-page";
-    const SCROLL_STORAGE_KEY = "anima-background-selector-active-scroll";
-    const SIDEBAR_SCROLL_STORAGE_KEY = "anima-background-selector-sidebar-scroll";
-    const DISPLAY_LANG_STORAGE_KEY = "anima-background-selector-display-lang";
-    const FILTER_STORAGE_KEY = "anima-background-selector-filters";
-    const COLLECTIONS_COLLAPSE_STORAGE_KEY = "anima-background-selector-collections-collapsed";
-    const CACHE_STORAGE_KEY = "anima-background-selector-use-cache";
-    const CACHE_BUST_KEY = "anima-background-selector-cache-bust";
+    const SORT_STORAGE_KEY = "anima-pose-selector-active-sort";
+    const PAGE_STORAGE_KEY = "anima-pose-selector-active-page";
+    const SCROLL_STORAGE_KEY = "anima-pose-selector-active-scroll";
+    const SIDEBAR_SCROLL_STORAGE_KEY = "anima-pose-selector-sidebar-scroll";
+    const DISPLAY_LANG_STORAGE_KEY = "anima-pose-selector-display-lang";
+    const FILTER_STORAGE_KEY = "anima-pose-selector-filters";
+    const COLLECTIONS_COLLAPSE_STORAGE_KEY = "anima-pose-selector-collections-collapsed";
 
     let activeSort = localStorage.getItem(SORT_STORAGE_KEY) || "id-asc";
     let displayLang = localStorage.getItem(DISPLAY_LANG_STORAGE_KEY) || "en";
@@ -177,8 +170,6 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
     let lastScrollTop = parseInt(localStorage.getItem(SCROLL_STORAGE_KEY), 10) || 0;
     let lastSidebarScrollTop = parseInt(localStorage.getItem(SIDEBAR_SCROLL_STORAGE_KEY), 10) || 0;
     let collectionsCollapsed = localStorage.getItem(COLLECTIONS_COLLAPSE_STORAGE_KEY) === "true";
-    let cacheMode = localStorage.getItem(CACHE_STORAGE_KEY) === "true";
-    let cacheBustVersion = parseInt(localStorage.getItem(CACHE_BUST_KEY) || "0");
 
     const activeFilters = {
         categories: new Set(),
@@ -192,10 +183,10 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
         if (Array.isArray(saved.traits)) saved.traits.forEach(v => activeFilters.traits.add(v));
         if (saved.collection) activeFilters.collection = saved.collection;
     } catch (e) {
-        console.warn("[Anima Tools] Failed to restore background filters", e);
+        console.warn("[Anima Tools] Failed to restore pose filters", e);
     }
 
-    const allTraits = Array.from(backgroundData.reduce((map, item) => {
+    const allTraits = Array.from(poseData.reduce((map, item) => {
         (Array.isArray(item.traits) ? item.traits : []).forEach(trait => {
             map.set(trait, (map.get(trait) || 0) + 1);
         });
@@ -211,8 +202,8 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
         });
 
         favoriteItems = nextItems;
-        favoritesConfig.background.groups = groups;
-        favoritesConfig.background.items = favoriteItems;
+        favoritesConfig.pose.groups = groups;
+        favoritesConfig.pose.items = favoriteItems;
 
         try {
             const response = await fetch("/anima-tools/favorites", {
@@ -223,7 +214,7 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
             if (!response.ok) throw new Error(await response.text());
             return true;
         } catch (e) {
-            console.error("[Anima Tools] Failed to save background favorites", e);
+            console.error("[Anima Tools] Failed to save pose favorites", e);
             alert(t("Failed to save favorites"));
             return false;
         }
@@ -237,11 +228,11 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
         }));
     }
 
-    const styleSheet = createGallerySelectorStyleSheet("background");
+    const styleSheet = createGallerySelectorStyleSheet("pose");
     document.head.appendChild(styleSheet);
 
     const overlay = createEl("div");
-    overlay.id = "anima-background-selector-overlay";
+    overlay.id = "anima-pose-selector-overlay";
     overlay.style.cssText = `
         position: fixed;
         inset: 0;
@@ -268,7 +259,7 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
         box-shadow: 0 25px 60px rgba(0,0,0,0.58);
         display: flex;
         flex-direction: column;
-        animation: animaBackgroundFadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        animation: animaPoseFadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
     `;
 
     overlay.onclick = (event) => {
@@ -288,20 +279,20 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
 
     const titleWrap = createEl("div");
     titleWrap.style.cssText = "min-width: 240px;";
-    const title = createEl("div", null, t("Anima Background Tag Selector"));
+    const title = createEl("div", null, t("Anima Pose Tag Selector"));
     title.style.cssText = "font-size: 20px; font-weight: 850; color: #fff; line-height: 1.2;";
-    const subtitle = createEl("div", null, t("Browse and select background prompt tags with visual preview cards."));
+    const subtitle = createEl("div", null, t("Browse and select pose prompt tags with visual preview cards."));
     subtitle.style.cssText = "font-size: 12.5px; color: #a1a1aa; margin-top: 5px;";
     titleWrap.appendChild(title);
     titleWrap.appendChild(subtitle);
 
-    const searchInput = createEl("input", "anima-background-input");
+    const searchInput = createEl("input", "anima-pose-input");
     searchInput.type = "search";
-    searchInput.placeholder = t("Search background or tags...");
+    searchInput.placeholder = t("Search pose or tags...");
     searchInput.value = "";
     searchInput.style.cssText += "flex: 1; min-width: 260px;";
 
-    const closeBtn = createEl("button", "anima-background-btn", t("Cancel"));
+    const closeBtn = createEl("button", "anima-pose-btn", t("Cancel"));
     closeBtn.onclick = () => closeModal();
 
     const headerActions = createEl("div");
@@ -328,7 +319,7 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
     const filterControls = createEl("div");
     filterControls.style.cssText = "display: flex; align-items: center; gap: 10px; min-width: 0; flex-wrap: wrap;";
 
-    const sortSelect = createEl("select", "anima-background-select");
+    const sortSelect = createEl("select", "anima-pose-select");
     sortSelect.innerHTML = `
         <option value="id-desc">${t("Latest")}</option>
         <option value="id-asc">${t("Oldest")}</option>
@@ -345,7 +336,7 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
         triggerFilter();
     };
 
-    const langSelect = createEl("select", "anima-background-select");
+    const langSelect = createEl("select", "anima-pose-select");
     langSelect.innerHTML = `
         <option value="bilingual">${t("Bilingual")}</option>
         <option value="en">${t("English Only")}</option>
@@ -361,49 +352,21 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
     filterControls.appendChild(sortSelect);
     filterControls.appendChild(langSelect);
 
-    // 缓存模式切换按钮 (本地持久化图片缓存)
-    const cacheToggleBtn = createEl("button", "anima-background-btn");
-    cacheToggleBtn.innerHTML = cacheMode ? t("Cache: ON") : t("Cache: OFF");
-    cacheToggleBtn.title = t("Toggle local image cache mode");
-    if (cacheMode) {
-        cacheToggleBtn.style.background = "rgba(34, 197, 94, 0.15)";
-        cacheToggleBtn.style.borderColor = "rgba(34, 197, 94, 0.4)";
-        cacheToggleBtn.style.color = "#4ade80";
-    }
-    cacheToggleBtn.onclick = () => {
-        cacheMode = !cacheMode;
-        localStorage.setItem(CACHE_STORAGE_KEY, cacheMode.toString());
-        cacheToggleBtn.innerText = cacheMode ? t("Cache: ON") : t("Cache: OFF");
-        if (cacheMode) {
-            cacheBustVersion++;
-            localStorage.setItem(CACHE_BUST_KEY, cacheBustVersion.toString());
-            cacheToggleBtn.style.background = "rgba(34, 197, 94, 0.15)";
-            cacheToggleBtn.style.borderColor = "rgba(34, 197, 94, 0.4)";
-            cacheToggleBtn.style.color = "#4ade80";
-        } else {
-            cacheToggleBtn.style.background = "";
-            cacheToggleBtn.style.borderColor = "";
-            cacheToggleBtn.style.color = "";
-        }
-        renderCurrentPage();
-    };
-    filterControls.appendChild(cacheToggleBtn);
-
     const actionControls = createEl("div");
     actionControls.style.cssText = "display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end;";
 
-    const copySelectedBtn = createEl("button", "anima-background-btn");
+    const copySelectedBtn = createEl("button", "anima-pose-btn");
     copySelectedBtn.innerHTML = `${copyIcon()} ${t("Copy Selected")}`;
     copySelectedBtn.onclick = () => {
         const text = buildSelectedText();
         if (!text) {
-            alert(t("Please select at least one background scene first."));
+            alert(t("Please select at least one pose first."));
             return;
         }
         copyText(text, () => showToast(t("Copied Successfully")));
     };
 
-    const showSelectedOnlyBtn = createEl("button", "anima-background-btn", t("Show Selected"));
+    const showSelectedOnlyBtn = createEl("button", "anima-pose-btn", t("Show Selected"));
     showSelectedOnlyBtn.onclick = () => {
         showSelectedOnly = !showSelectedOnly;
         showSelectedOnlyBtn.classList.toggle("active", showSelectedOnly);
@@ -411,11 +374,11 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
         triggerFilter();
     };
 
-    const clearSelectedBtn = createEl("button", "anima-background-btn danger");
+    const clearSelectedBtn = createEl("button", "anima-pose-btn danger");
     clearSelectedBtn.innerHTML = `${trashIcon()} ${t("Clear Selected")}`;
     clearSelectedBtn.onclick = () => {
-        if (selectedBackground.size === 0) return;
-        selectedBackground.clear();
+        if (selectedPose.size === 0) return;
+        selectedPose.clear();
         updateCountLabel();
         renderCurrentPage();
     };
@@ -430,7 +393,7 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
     const main = createEl("div");
     main.style.cssText = "display: flex; flex: 1; min-height: 0; background: rgba(10,10,15,0.18);";
 
-    const sidebar = createEl("aside", "anima-background-scrollbar");
+    const sidebar = createEl("aside", "anima-pose-scrollbar");
     sidebar.style.cssText = `
         width: 280px;
         flex: 0 0 280px;
@@ -445,7 +408,7 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
     const gridArea = createEl("div");
     gridArea.style.cssText = "flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0;";
 
-    const listContainer = createEl("div", "anima-background-scrollbar");
+    const listContainer = createEl("div", "anima-pose-scrollbar");
     listContainer.style.cssText = `
         flex: 1;
         overflow-y: auto;
@@ -464,28 +427,26 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
         entries.forEach(entry => {
             if (!entry.isIntersecting) return;
             const img = entry.target;
-            if (img.dataset.lazySrc && !img.src) {
+            if (img.dataset.lazySrc) {
                 img.src = img.dataset.lazySrc;
-                delete img.dataset.lazySrc;
-            } else if (img.dataset.lazySrc && img.src) {
                 delete img.dataset.lazySrc;
             }
             imageObserver.unobserve(img);
         });
     }, { root: listContainer, rootMargin: "320px" });
 
-    const pagination = createEl("div", "anima-background-pagination");
+    const pagination = createEl("div", "anima-pose-pagination");
 
-    const pageStats = createEl("div", "anima-background-pagination-stats");
+    const pageStats = createEl("div", "anima-pose-pagination-stats");
 
-    const pageControls = createEl("div", "anima-background-pagination-controls");
+    const pageControls = createEl("div", "anima-pose-pagination-controls");
 
-    const firstBtn = createEl("button", "anima-background-page-btn", t("First"));
-    const prevBtn = createEl("button", "anima-background-page-btn", t("Prev"));
-    const nextBtn = createEl("button", "anima-background-page-btn", t("Next"));
-    const lastBtn = createEl("button", "anima-background-page-btn", t("Last"));
-    const pageNumContainer = createEl("div", "anima-background-page-number");
-    const pageInput = createEl("input", "anima-background-page-input");
+    const firstBtn = createEl("button", "anima-pose-page-btn", t("First"));
+    const prevBtn = createEl("button", "anima-pose-page-btn", t("Prev"));
+    const nextBtn = createEl("button", "anima-pose-page-btn", t("Next"));
+    const lastBtn = createEl("button", "anima-pose-page-btn", t("Last"));
+    const pageNumContainer = createEl("div", "anima-pose-page-number");
+    const pageInput = createEl("input", "anima-pose-page-input");
     pageInput.type = "text";
     const totalPagesLabel = createEl("span");
 
@@ -526,14 +487,14 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
         gap: 14px;
     `;
 
-    const countLabel = createEl("button", "anima-background-btn active");
+    const countLabel = createEl("button", "anima-pose-btn active");
     countLabel.onclick = () => showSelectedOnlyBtn.click();
 
     const footerBtns = createEl("div");
     footerBtns.style.cssText = "display: flex; align-items: center; gap: 10px;";
-    const cancelFooterBtn = createEl("button", "anima-background-btn", t("Cancel"));
+    const cancelFooterBtn = createEl("button", "anima-pose-btn", t("Cancel"));
     cancelFooterBtn.onclick = () => closeModal();
-    const applyBtn = createEl("button", "anima-background-btn primary", t("Confirm & Apply"));
+    const applyBtn = createEl("button", "anima-pose-btn primary", t("Confirm & Apply"));
     applyBtn.onclick = () => applySelectionAndClose();
 
     footerBtns.appendChild(cancelFooterBtn);
@@ -552,7 +513,7 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
 
     function renderSidebar() {
         sidebar.innerHTML = "";
-        const clearFiltersBtn = createEl("button", "anima-background-clear-filters-btn");
+        const clearFiltersBtn = createEl("button", "anima-pose-clear-filters-btn");
         clearFiltersBtn.type = "button";
         clearFiltersBtn.innerHTML = `
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round">
@@ -570,7 +531,7 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
         const collectionsContent = createEl("div");
         collectionsContent.style.cssText = collectionsCollapsed ? "display: none;" : "display: flex; flex-direction: column;";
         if (!collectionsCollapsed) {
-            const allItem = sidebarItem(t("All Backgrounds"), activeFilters.collection === "all", backgroundData.length);
+            const allItem = sidebarItem(t("All Poses"), activeFilters.collection === "all", poseData.length);
             allItem.onclick = () => switchCollection("all");
             collectionsContent.appendChild(allItem);
 
@@ -629,7 +590,7 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
 
         sidebar.appendChild(sectionTitle(t("Categories")));
         CATEGORY_LIST.forEach(category => {
-            const row = createEl("label", "anima-background-check-row");
+            const row = createEl("label", "anima-pose-check-row");
             row.innerHTML = `
                 <input type="checkbox" ${activeFilters.categories.has(category) ? "checked" : ""}>
                 <span>${escapeHtml(getCategoryLabel(category, displayLang))}</span>
@@ -647,9 +608,9 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
 
         sidebar.appendChild(sectionTitle(t("Traits")));
         allTraits.forEach(trait => {
-            const zh = getTraitZh(trait.name, backgroundData);
+            const zh = getTraitZh(trait.name, poseData);
             const label = displayLang === "bilingual" && zh ? `${trait.name} (${zh})` : trait.name;
-            const row = createEl("label", "anima-background-check-row");
+            const row = createEl("label", "anima-pose-check-row");
             row.innerHTML = `
                 <input type="checkbox" ${activeFilters.traits.has(trait.name) ? "checked" : ""}>
                 <span style="min-width:0;">${escapeHtml(label)} <span style="color:#71717a;">${trait.count}</span></span>
@@ -672,14 +633,14 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
     }
 
     function collectionsSectionHeader() {
-        const header = createEl("div", "anima-background-section-header foldable");
-        const title = createEl("span", "anima-background-section-title", t("Collections"));
-        const spacer = createEl("span", "anima-background-section-spacer");
-        const addBtn = createEl("button", "anima-background-section-icon-btn");
+        const header = createEl("div", "anima-pose-section-header foldable");
+        const title = createEl("span", "anima-pose-section-title", t("Collections"));
+        const spacer = createEl("span", "anima-pose-section-spacer");
+        const addBtn = createEl("button", "anima-pose-section-icon-btn");
         addBtn.type = "button";
         addBtn.title = t("Create Group");
         addBtn.innerHTML = "+";
-        const arrow = createEl("span", `anima-background-section-arrow${collectionsCollapsed ? " collapsed" : ""}`);
+        const arrow = createEl("span", `anima-pose-section-arrow${collectionsCollapsed ? " collapsed" : ""}`);
         arrow.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>`;
 
         addBtn.onclick = (event) => {
@@ -711,11 +672,11 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
     }
 
     function sectionTitle(label) {
-        return createEl("div", "anima-background-section-header", label);
+        return createEl("div", "anima-pose-section-header", label);
     }
 
     function sidebarItem(label, active, count) {
-        const row = createEl("div", `anima-background-sidebar-item${active ? " active" : ""}`);
+        const row = createEl("div", `anima-pose-sidebar-item${active ? " active" : ""}`);
         const nameSpan = createEl("span", null, label);
         nameSpan.style.cssText = "overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;";
         const countSpan = createEl("span", null, String(count || 0));
@@ -741,7 +702,7 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
     }
 
     function updateClearFiltersButtonState() {
-        const clearFiltersBtn = sidebar.querySelector(".anima-background-clear-filters-btn");
+        const clearFiltersBtn = sidebar.querySelector(".anima-pose-clear-filters-btn");
         if (clearFiltersBtn) {
             clearFiltersBtn.disabled = !hasActiveSidebarFilters();
         }
@@ -770,8 +731,8 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
         let items = [];
         let customItems = [];
         if (showSelectedOnly) {
-            customItems = favoriteItems.filter(item => item.isCustom && selectedBackground.has(getItemKey(item)));
-            items = backgroundData.filter(item => selectedBackground.has(getItemKey(item)));
+            customItems = favoriteItems.filter(item => item.isCustom && selectedPose.has(getItemKey(item)));
+            items = poseData.filter(item => selectedPose.has(getItemKey(item)));
         } else {
             const groupIds = new Set();
             if (activeFilters.collection !== "all") {
@@ -782,7 +743,7 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
                 });
             }
 
-            items = backgroundData.filter(item => {
+            items = poseData.filter(item => {
                 if (activeFilters.collection !== "all" && !groupIds.has(String(item.id))) return false;
 
                 if (queryList.length > 0) {
@@ -855,7 +816,7 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
         const total = filteredData.length;
         const start = total === 0 ? 0 : (currentPage - 1) * 48 + 1;
         const end = Math.min(currentPage * 48, total);
-        pageStats.innerText = t("Total {total} background scenes | Showing {start}-{end}", { total, start, end });
+        pageStats.innerText = t("Total {total} poses | Showing {start}-{end}", { total, start, end });
         pageInput.value = String(currentPage);
         totalPagesLabel.innerText = `/ ${totalPages}`;
         firstBtn.disabled = currentPage <= 1;
@@ -887,7 +848,7 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
             empty.style.cssText = "grid-column:1/-1; padding:70px 20px; text-align:center; color:#a1a1aa;";
             empty.innerHTML = `
                 <div style="font-size:38px;font-weight:900;color:${THEME.accentText};margin-bottom:12px;">0</div>
-                <div style="font-size:16px;font-weight:800;color:#fff;">${escapeHtml(t("No matching background scenes found"))}</div>
+                <div style="font-size:16px;font-weight:800;color:#fff;">${escapeHtml(t("No matching poses found"))}</div>
                 <div style="font-size:13px;margin-top:8px;">${escapeHtml(t("Try another search or clear filters."))}</div>
             `;
             listContainer.appendChild(empty);
@@ -912,8 +873,8 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
     }
 
     function createCustomPlaceholderCard() {
-        const card = createEl("article", "anima-background-create-card");
-        const content = createEl("div", "anima-background-create-card-content");
+        const card = createEl("article", "anima-pose-create-card");
+        const content = createEl("div", "anima-pose-create-card-content");
         content.innerHTML = `
             <div style="font-size:46px;line-height:1;font-weight:300;">+</div>
             <div style="font-size:13.5px;font-weight:800;">${escapeHtml(t("Create Custom Item"))}</div>
@@ -944,18 +905,18 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
 
     function createCard(item) {
         const key = getItemKey(item);
-        const isSelected = selectedBackground.has(key);
+        const isSelected = selectedPose.has(key);
         const isFavorite = !item.isCustom && favoriteSet.has(String(item.id));
         const favInfo = item.isCustom ? item : favoriteMap.get(String(item.id));
         const nickname = favInfo?.nickname || "";
 
-        const card = createEl("article", `anima-background-card${isSelected ? " selected" : ""}`);
+        const card = createEl("article", `anima-pose-card${isSelected ? " selected" : ""}`);
         card.dataset.key = key;
 
-        const clip = createEl("div", "anima-background-card-clip");
+        const clip = createEl("div", "anima-pose-card-clip");
         card.appendChild(clip);
 
-        const placeholder = createEl("div", "anima-background-placeholder");
+        const placeholder = createEl("div", "anima-pose-placeholder");
         placeholder.innerText = item.isCustom ? "T" : (formatDisplayName(item, displayLang).trim().charAt(0).toUpperCase() || "?");
         clip.appendChild(placeholder);
 
@@ -972,70 +933,33 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
             img.alt = item.name || "";
             img.loading = "lazy";
             img.decoding = "async";
-            const originalSrc = item.preview;
-            const ns = "anima_background_selector";
-
-            if (cacheMode) {
-                // ========== 缓存开启：只读模式 ==========
-                const readonlyUrl = getReadonlyProxyUrl(originalSrc, cacheBustVersion);
-                if (isImageLoaded(readonlyUrl)) {
-                    img.src = readonlyUrl;
-                    img.style.opacity = "1";
-                } else {
-                    placeholder.style.opacity = "1";
-                }
-                img.onload = () => {
-                    img.style.opacity = "1";
-                    img.style.display = "";
-                    placeholder.style.opacity = "0";
-                    loader?.remove();
-                    markImageLoaded(readonlyUrl);
-                };
-                img.onerror = () => {
-                    img.style.display = "none";
-                    loader?.remove();
-                    placeholder.style.opacity = "1";
-                };
+            const imgUrl = item.preview;
+            if (isImageLoaded(imgUrl)) {
+                img.src = imgUrl;
+                img.style.opacity = "1";
             } else {
-                // ========== 缓存关闭：CDN 直连 + 后台预缓存 ==========
-                if (isImageLoaded(originalSrc)) {
-                    img.src = originalSrc;
-                    img.style.opacity = "1";
-                } else {
-                    img.dataset.lazySrc = originalSrc;
-                    loader = createEl("div", "anima-background-shimmer");
-                    const spinner = createEl("div", "anima-background-spinner");
-                    loader.appendChild(spinner);
-                    clip.appendChild(loader);
-                }
-                img.onload = () => {
-                    img.style.opacity = "1";
-                    img.style.display = "";
-                    placeholder.style.opacity = "0";
-                    loader?.remove();
-                    markImageLoaded(originalSrc);
-                    // 后台预缓存
-                    fetch(
-                        `/anima-tools/cache-image-async?namespace=${ns}&url=${encodeURIComponent(originalSrc)}`,
-                        { method: "POST", keepalive: true }
-                    ).catch(() => {});
-                };
-                img.onerror = () => {
-                    if (!img.dataset.cacheTried) {
-                        img.dataset.cacheTried = "1";
-                        img.src = getCacheProxyUrl(originalSrc);
-                        return;
-                    }
-                    img.remove();
-                    loader?.remove();
-                    placeholder.style.opacity = "1";
-                };
+                img.dataset.lazySrc = imgUrl;
+                loader = createEl("div", "anima-pose-shimmer");
+                const spinner = createEl("div", "anima-pose-spinner");
+                loader.appendChild(spinner);
+                clip.appendChild(loader);
             }
+            img.onload = () => {
+                img.style.opacity = "1";
+                placeholder.style.opacity = "0";
+                loader?.remove();
+                markImageLoaded(imgUrl);
+            };
+            img.onerror = () => {
+                img.remove();
+                loader?.remove();
+                placeholder.style.opacity = "1";
+            };
             clip.appendChild(img);
             imageObserver.observe(img);
         }
 
-        const selectedMark = createEl("div", "anima-background-selected-mark");
+        const selectedMark = createEl("div", "anima-pose-selected-mark");
         selectedMark.innerHTML = isSelected ? checkIcon() : "";
         card.appendChild(selectedMark);
 
@@ -1045,7 +969,7 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
                 event.stopPropagation();
                 if (!confirm(t("Are you sure you want to delete this custom item?"))) return;
                 favoriteItems = favoriteItems.filter(existing => existing.name !== item.name);
-                selectedBackground.delete(key);
+                selectedPose.delete(key);
                 await saveFavorites();
                 renderSidebar();
                 triggerFilter();
@@ -1098,13 +1022,13 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
         };
         card.appendChild(groupBtn);
 
-        const mask = createEl("div", "anima-background-card-mask");
+        const mask = createEl("div", "anima-pose-card-mask");
         clip.appendChild(mask);
 
-        const tagsOverlay = createEl("div", "anima-background-tags-overlay");
+        const tagsOverlay = createEl("div", "anima-pose-tags-overlay");
         const promptTags = splitPromptTokens(item.isCustom ? item.customContent : item.tags);
         const promptTagsZh = splitPromptTokens(item.tags_zh);
-        const titleBtn = createEl("button", "anima-background-tags-title");
+        const titleBtn = createEl("button", "anima-pose-tags-title");
         titleBtn.innerHTML = `
             <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(t("Prompt Tags"))} · ${promptTags.length}</span>
             <span style="font-size:10px;color:#f9a8d4;flex:0 0 auto;">${escapeHtml(t("Copy"))}</span>
@@ -1116,11 +1040,11 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
         };
         tagsOverlay.appendChild(titleBtn);
 
-        const tagsList = createEl("div", "anima-background-tags-list");
+        const tagsList = createEl("div", "anima-pose-tags-list");
         promptTags.forEach((tag, index) => {
             const zh = promptTagsZh[index] || "";
             const displayTag = displayLang === "bilingual" && zh ? `${tag} (${zh})` : tag;
-            const pill = createEl("span", "anima-background-tag-pill", displayTag);
+            const pill = createEl("span", "anima-pose-tag-pill", displayTag);
             pill.title = displayTag;
             pill.onclick = (event) => {
                 event.stopPropagation();
@@ -1131,12 +1055,12 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
         tagsOverlay.appendChild(tagsList);
         clip.appendChild(tagsOverlay);
 
-        const info = createEl("div", "anima-background-card-info");
-        const titleEl = createEl("div", "anima-background-card-title");
+        const info = createEl("div", "anima-pose-card-info");
+        const titleEl = createEl("div", "anima-pose-card-title");
         const displayName = formatDisplayName(item, displayLang);
         titleEl.innerText = displayName;
         titleEl.title = item.isCustom ? item.customContent || "" : `${item.name_zh || ""}${item.name_zh ? " / " : ""}${item.name || ""}`;
-        const subEl = createEl("div", "anima-background-card-sub");
+        const subEl = createEl("div", "anima-pose-card-sub");
         if (item.isCustom) {
             subEl.innerText = t("Custom");
         } else if (displayLang === "bilingual" && item.name_zh) {
@@ -1147,7 +1071,7 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
         }
 
         if (nickname && !item.isCustom) {
-            const note = createEl("div", "anima-background-card-sub", nickname);
+            const note = createEl("div", "anima-pose-card-sub", nickname);
             note.style.color = THEME.accentText;
             info.appendChild(titleEl);
             info.appendChild(note);
@@ -1159,9 +1083,9 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
         clip.appendChild(info);
 
         card.onclick = () => {
-            if (selectedBackground.has(key)) selectedBackground.delete(key);
-            else selectedBackground.add(key);
-            updateCardSelection(card, selectedBackground.has(key));
+            if (selectedPose.has(key)) selectedPose.delete(key);
+            else selectedPose.add(key);
+            updateCardSelection(card, selectedPose.has(key));
             updateCountLabel();
         };
 
@@ -1170,18 +1094,18 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
 
     function updateCardSelection(card, selected) {
         card.classList.toggle("selected", selected);
-        const mark = card.querySelector(".anima-background-selected-mark");
+        const mark = card.querySelector(".anima-pose-selected-mark");
         if (mark) mark.innerHTML = selected ? checkIcon() : "";
     }
 
     function badge(text) {
-        const el = createEl("span", "anima-background-badge", text);
+        const el = createEl("span", "anima-pose-badge", text);
         el.title = text;
         return el;
     }
 
     function iconButton(top, html, titleText) {
-        const btn = createEl("button", "anima-background-icon-btn");
+        const btn = createEl("button", "anima-pose-icon-btn");
         btn.style.top = `${top}px`;
         btn.innerHTML = html;
         btn.title = titleText;
@@ -1207,11 +1131,11 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
     }
 
     function openGroupSelectPopover(x, y, item) {
-        const existing = document.getElementById("anima-background-group-popover");
+        const existing = document.getElementById("anima-pose-group-popover");
         if (existing) existing.remove();
 
-        const popover = createEl("div", "anima-background-popover");
-        popover.id = "anima-background-group-popover";
+        const popover = createEl("div", "anima-pose-popover");
+        popover.id = "anima-pose-group-popover";
         popover.style.left = `${x}px`;
         popover.style.top = `${y + 8}px`;
         popover.style.transform = "translateX(-50%)";
@@ -1262,7 +1186,7 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
         const content = dialog.firstChild;
         const titleNode = createEl("div", null, titleText);
         titleNode.style.cssText = "font-size:16px;font-weight:800;color:#fff;";
-        const input = createEl("input", "anima-background-input");
+        const input = createEl("input", "anima-pose-input");
         input.type = "text";
         input.value = defaultValue || "";
         input.placeholder = placeholderText;
@@ -1288,10 +1212,10 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
         const content = dialog.firstChild;
         const titleNode = createEl("div", null, t("Create Custom Item"));
         titleNode.style.cssText = "font-size:16px;font-weight:800;color:#fff;";
-        const titleInput = createEl("input", "anima-background-input");
+        const titleInput = createEl("input", "anima-pose-input");
         titleInput.type = "text";
         titleInput.placeholder = t("Item Title (e.g. My Style A)...");
-        const contentInput = createEl("textarea", "anima-background-input");
+        const contentInput = createEl("textarea", "anima-pose-input");
         contentInput.placeholder = t("Enter prompt tags (e.g. masterpiece, highly detailed)...");
         contentInput.rows = 4;
         contentInput.style.cssText += "resize:vertical;font-family:monospace;";
@@ -1315,7 +1239,7 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
     function createModalShell(maxWidth = 400) {
         return createSharedModalShell({
             maxWidth,
-            animationName: "animaBackgroundFadeIn",
+            animationName: "animaPoseFadeIn",
         });
     }
 
@@ -1325,13 +1249,13 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
             onConfirm,
             cancelText: t("Cancel"),
             confirmText,
-            buttonClass: "anima-background-btn",
+            buttonClass: "anima-pose-btn",
         });
     }
 
     function buildSelectedText() {
         const tags = [];
-        selectedBackground.forEach(key => {
+        selectedPose.forEach(key => {
             if (key.startsWith("custom:")) {
                 const item = favoriteItems.find(fav => fav.isCustom && getItemKey(fav) === key);
                 splitPromptTokens(item?.customContent || "").forEach(tag => tags.push(tag));
@@ -1358,12 +1282,12 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
     }
 
     function updateCountLabel() {
-        countLabel.innerHTML = `${checkIcon()} <span>${t("Selected: {count} background scenes", { count: selectedBackground.size })}</span>`;
+        countLabel.innerHTML = `${checkIcon()} <span>${t("Selected: {count} poses", { count: selectedPose.size })}</span>`;
     }
 
     function closeModal() {
         imageObserver.disconnect();
-        document.getElementById("anima-background-group-popover")?.remove();
+        document.getElementById("anima-pose-group-popover")?.remove();
         overlay.remove();
         styleSheet.remove();
     }
@@ -1407,3 +1331,6 @@ async function openBackgroundSelectorModal(node, tagsWidget) {
     updateCountLabel();
     searchInput.focus();
 }
+
+
+
