@@ -97,16 +97,11 @@ async function openArtistSelectorModal(node, tagsWidget) {
         }
     });
 
-    // CDN 镜像源配置 (保存在本地，下次自动读取)
-    const CDN_STORAGE_KEY = "anima-selector-active-cdn";
-    let activeCdn = localStorage.getItem(CDN_STORAGE_KEY) || "jsdelivr";
-
     // 本地图片缓存模式 (持久化，适合离线或慢速网络环境)
     const CACHE_STORAGE_KEY = "anima-selector-use-cache";
     const CACHE_BUST_KEY = "anima-selector-cache-bust";
     let cacheMode = localStorage.getItem(CACHE_STORAGE_KEY) === "true";
     let cacheBustVersion = parseInt(localStorage.getItem(CACHE_BUST_KEY) || "0");
-
     // 记忆排序、页数和滚动位置配置 (本地持久化读取)
     const SORT_STORAGE_KEY = "anima-selector-active-sort";
     const PAGE_STORAGE_KEY = "anima-selector-active-page";
@@ -545,25 +540,27 @@ async function openArtistSelectorModal(node, tagsWidget) {
     let lastSidebarScrollTop = parseInt(localStorage.getItem(SIDEBAR_SCROLL_STORAGE_KEY)) || 0;
     let isFirstRender = true;
 
-    function getImgUrl(partition, id) {
-        if (activeCdn === "jsdelivr") {
-            return `https://fastly.jsdelivr.net/gh/ThetaCursed/Anima-Assets@main/images/${partition}/${id}.webp`;
-        } else if (activeCdn === "github") {
-            return `https://raw.githubusercontent.com/ThetaCursed/Anima-Assets/main/images/${partition}/${id}.webp`;
-        } else {
-            return `https://cdn.statically.io/gh/ThetaCursed/Anima-Assets/main/images/${partition}/${id}.webp`;
-        }
+    function normalizeArtistPreviewName(name) {
+        return String(name || "")
+            .replace(/\\([()[\]{}])/g, "$1")
+            .trim();
     }
 
-    // 根据缓存模式返回 CDN 直连 URL 或本地缓存代理 URL
-    function getImageUrl(partition, id) {
-        const cdnUrl = getImgUrl(partition, id);
-        if (cacheMode) {
-            return `/anima-tools/cached-image?readonly=1&_cb=${cacheBustVersion}&namespace=anima_artist_selector&url=${encodeURIComponent(cdnUrl)}`;
+    function getImgUrls(partition, id, name) {
+        const normalizedName = normalizeArtistPreviewName(name);
+        const urls = [];
+        if (normalizedName) {
+            urls.push(`https://blobs.animadex.net/ArtistOutputs/thumbs/${encodeURIComponent(normalizedName)}.webp`);
         }
-        return cdnUrl;
+        urls.push(
+            `https://fastly.jsdelivr.net/gh/ThetaCursed/Anima-Assets@main/images/${partition}/${id}.webp`,
+            `https://raw.githubusercontent.com/ThetaCursed/Anima-Assets/main/images/${partition}/${id}.webp`,
+            `https://cdn.statically.io/gh/ThetaCursed/Anima-Assets/main/images/${partition}/${id}.webp`,
+        );
+        return [...new Set(urls)];
     }
 
+    // 缓存代理 URL (所有镜像直连失败后的降级入口)
     function getCacheProxyUrl(cdnUrl) {
         return `/anima-tools/cached-image?namespace=anima_artist_selector&url=${encodeURIComponent(cdnUrl)}`;
     }
@@ -1039,32 +1036,6 @@ async function openArtistSelectorModal(node, tagsWidget) {
     };
     filterControls.appendChild(sortSelect);
 
-    // 镜像源切换下拉菜单
-    const cdnSelect = document.createElement("select");
-    cdnSelect.style.cssText = `
-        padding: 11px 18px;
-        background: rgba(10, 10, 15, 0.7);
-        border: 1px solid rgba(11, 140, 233, 0.2);
-        border-radius: 14px;
-        color: #7dd3fc;
-        font-size: 14px;
-        font-weight: 600;
-        outline: none;
-        cursor: pointer;
-        transition: all 0.25s ease;
-    `;
-    cdnSelect.innerHTML = `
-        <option value="jsdelivr" ${activeCdn === "jsdelivr" ? "selected" : ""}>${t("CDN: JsDelivr (Recommended)")}</option>
-        <option value="github" ${activeCdn === "github" ? "selected" : ""}>${t("CDN: GitHub Raw (Proxy)")}</option>
-        <option value="statically" ${activeCdn === "statically" ? "selected" : ""}>${t("CDN: Statically")}</option>
-    `;
-    cdnSelect.onchange = () => {
-        activeCdn = cdnSelect.value;
-        localStorage.setItem(CDN_STORAGE_KEY, activeCdn);
-        renderCurrentPage();
-    };
-    filterControls.appendChild(cdnSelect);
-
     // 缓存模式切换按钮 (本地持久化图片缓存)
     const cacheToggleBtn = document.createElement("button");
     cacheToggleBtn.className = "anima-btn";
@@ -1115,9 +1086,6 @@ async function openArtistSelectorModal(node, tagsWidget) {
         renderCurrentPage();
     };
     filterControls.appendChild(cacheToggleBtn);
-
-
-
     // 右侧：功能按钮
     const actionControls = document.createElement("div");
     actionControls.style.cssText = "display: flex; gap: 12px; align-items: center;";
@@ -2226,12 +2194,12 @@ async function openArtistSelectorModal(node, tagsWidget) {
                 img.loading = "lazy";
 
                 const partition = item.p || 1;
-                const cdnUrl = getImgUrl(partition, item.id);
                 const ns = "anima_artist_selector";
 
                 if (cacheMode) {
-                    // ========== 缓存开启：只读模式 ==========
-                    const readonlyUrl = `/anima-tools/cached-image?readonly=1&_cb=${cacheBustVersion}&namespace=${ns}&url=${encodeURIComponent(cdnUrl)}`;
+                    // ========== 缓存开启：只读模式 (仅显示本地已缓存图片，不发网络请求) ==========
+                    const primaryUrl = getImgUrls(partition, item.id, item.name)[0];
+                    const readonlyUrl = `/anima-tools/cached-image?readonly=1&_cb=${cacheBustVersion}&namespace=${ns}&url=${encodeURIComponent(primaryUrl)}`;
                     if (isImageLoaded(readonlyUrl)) {
                         img.src = readonlyUrl;
                         img.style.opacity = "1";
@@ -2250,16 +2218,21 @@ async function openArtistSelectorModal(node, tagsWidget) {
                         placeholder.style.opacity = "1";
                     };
                 } else {
-                    // ========== 缓存关闭：CDN 直连 + 后台预缓存 ==========
-                    let loader = null;
-                    let loadAttempts = 0;
-                    const MAX_LOAD_ATTEMPTS = 2;
+                    // ========== 缓存关闭：多源回退直连 + 后台预缓存 ==========
+                    const imageUrls = getImgUrls(partition, item.id, item.name);
+                    const cachedUrl = imageUrls.find(url => isImageLoaded(url));
+                    let imgUrl = cachedUrl || imageUrls.shift();
+                    const fallbackUrls = cachedUrl
+                        ? imageUrls.filter(url => url !== cachedUrl)
+                        : imageUrls;
 
-                    if (isImageLoaded(cdnUrl)) {
-                        img.src = cdnUrl;
+                    let loader = null;
+                    if (isImageLoaded(imgUrl)) {
+                        // 缓存命中：直接显示，跳过 spinner
+                        img.src = imgUrl;
                         img.style.opacity = "1";
                     } else {
-                        img.dataset.lazySrc = cdnUrl;
+                        img.dataset.lazySrc = imgUrl;
                         loader = document.createElement("div");
                         loader.className = "anima-shimmer";
                         const spinner = document.createElement("div");
@@ -2274,34 +2247,33 @@ async function openArtistSelectorModal(node, tagsWidget) {
                         placeholder.style.opacity = "0";
                         loader?.remove();
                         loader = null;
-                        markImageLoaded(cdnUrl);
+                        markImageLoaded(imgUrl);
                         // 后台预缓存到磁盘
                         fetch(
-                            `/anima-tools/cache-image-async?namespace=${ns}&url=${encodeURIComponent(cdnUrl)}`,
+                            `/anima-tools/cache-image-async?namespace=${ns}&url=${encodeURIComponent(imgUrl)}`,
                             { method: "POST", keepalive: true }
                         ).catch(() => {});
                     };
                     img.onerror = () => {
-                        loadAttempts++;
-                        if (loadAttempts >= MAX_LOAD_ATTEMPTS) {
-                            img.style.display = "none";
-                            loader?.remove();
-                            loader = null;
-                            placeholder.style.opacity = "1";
+                        // 多源回退：依次尝试剩余镜像源
+                        const nextUrl = fallbackUrls.shift();
+                        if (nextUrl) {
+                            imgUrl = nextUrl;
+                            img.src = nextUrl;
                             return;
                         }
-                        const proxyUrl = `/anima-tools/cached-image?namespace=${ns}&url=${encodeURIComponent(cdnUrl)}`;
-                        if (loadAttempts === 1 && proxyUrl !== img.src) {
+                        // 所有镜像直连失败：最后尝试一次缓存代理
+                        const proxyUrl = getCacheProxyUrl(imgUrl);
+                        if (proxyUrl !== img.src) {
                             img.src = proxyUrl;
                             return;
                         }
-                        const retryUrl = (img.src || "").includes("?")
-                            ? img.src + "&_retry=" + Date.now()
-                            : img.src + "?_retry=" + Date.now();
-                        img.src = retryUrl;
+                        img.style.display = "none";
+                        loader?.remove();
+                        loader = null;
+                        placeholder.style.opacity = "1";
                     };
                 }
-
                 cardClip.appendChild(img);
                 artistImageObserver.observe(img);
             }
