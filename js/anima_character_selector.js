@@ -36,6 +36,33 @@ app.registerExtension({
     async beforeRegisterNodeDef(nodeType, nodeData, app) {
         if (nodeData.name === "AnimaCharacterTagSelector" || nodeData.name === "AnimaCharacterTagSelectorPlus" || isAnimaPromptPlusNode(nodeData.name)) {
             installSelectorExecutionSync(nodeType);
+
+            // 工作流加载后同步 _character_names：首次启动时隐藏 widget 可能为空，
+            // 需根据 character_tags 反向匹配角色名，避免 characters 输出端口回退到包含 tags 的内容
+            const origOnConfigure = nodeType.prototype.onConfigure;
+            nodeType.prototype.onConfigure = function () {
+                const result = origOnConfigure?.apply(this, arguments);
+                const node = this;
+                const trySyncCharacterNames = () => {
+                    const namesWidget = node.widgets?.find(w => w.name === "_character_names");
+                    const tagsWidget = node.widgets?.find(w => w.name === "character_tags");
+                    if (!namesWidget || !tagsWidget) return;
+                    // _character_names 已有值则跳过
+                    if (namesWidget.value && namesWidget.value.trim()) return;
+                    const tagsValue = tagsWidget.value || "";
+                    if (!tagsValue.trim()) return;
+                    // characterData 未加载则等待重试
+                    if (!window.characterData) {
+                        setTimeout(trySyncCharacterNames, 500);
+                        return;
+                    }
+                    const names = resolveCharacterNamesFromTags(tagsValue);
+                    if (names) namesWidget.value = names;
+                };
+                setTimeout(trySyncCharacterNames, 0);
+                return result;
+            };
+
             const origOnCreated = nodeType.prototype.onNodeCreated;
             nodeType.prototype.onNodeCreated = function () {
                 origOnCreated?.apply(this, arguments);
@@ -118,6 +145,26 @@ function getCharacterTrigger(item) {
     if (source.trigger) return source.trigger;
     if (item.copyright) return `${item.name}, ${item.copyright}`;
     return item.name || "";
+}
+
+// 根据已有的 character_tags 文本反向匹配出纯角色名列表
+function resolveCharacterNamesFromTags(tagsText) {
+    if (!tagsText || !tagsText.trim()) return "";
+    const normalizedText = tagsText.replace(/_raw_:/g, "");
+    const tokens = splitPromptTokens(normalizedText);
+    const tokenSet = new Set(tokens.map(normalizePromptToken));
+    const matched = new Set();
+    (window.characterData || []).forEach(item => {
+        const nameKey = normalizePromptToken(item.name);
+        const triggerKeys = splitPromptTokens(getCharacterTrigger(item)).map(normalizePromptToken);
+        const matchesName = nameKey && tokenSet.has(nameKey);
+        const matchesTrigger = triggerKeys.length > 0 && triggerKeys.every(key => tokenSet.has(key));
+        if (matchesName || matchesTrigger) {
+            matched.add(item.name);
+        }
+    });
+    const names = Array.from(matched).join(", ");
+    return names ? names + ", " : "";
 }
 
 function getExplicitCharacterTags(item) {
