@@ -97,10 +97,6 @@ async function openArtistSelectorModal(node, tagsWidget) {
         }
     });
 
-    // CDN 镜像源配置 (保存在本地，下次自动读取)
-    const CDN_STORAGE_KEY = "anima-selector-active-cdn";
-    let activeCdn = localStorage.getItem(CDN_STORAGE_KEY) || "jsdelivr";
-
     // 记忆排序、页数和滚动位置配置 (本地持久化读取)
     const SORT_STORAGE_KEY = "anima-selector-active-sort";
     const PAGE_STORAGE_KEY = "anima-selector-active-page";
@@ -539,14 +535,24 @@ async function openArtistSelectorModal(node, tagsWidget) {
     let lastSidebarScrollTop = parseInt(localStorage.getItem(SIDEBAR_SCROLL_STORAGE_KEY)) || 0;
     let isFirstRender = true;
 
-    function getImgUrl(partition, id) {
-        if (activeCdn === "jsdelivr") {
-            return `https://fastly.jsdelivr.net/gh/ThetaCursed/Anima-Assets@main/images/${partition}/${id}.webp`;
-        } else if (activeCdn === "github") {
-            return `https://raw.githubusercontent.com/ThetaCursed/Anima-Assets/main/images/${partition}/${id}.webp`;
-        } else {
-            return `https://cdn.statically.io/gh/ThetaCursed/Anima-Assets/main/images/${partition}/${id}.webp`;
+    function normalizeArtistPreviewName(name) {
+        return String(name || "")
+            .replace(/\\([()[\]{}])/g, "$1")
+            .trim();
+    }
+
+    function getImgUrls(partition, id, name) {
+        const normalizedName = normalizeArtistPreviewName(name);
+        const urls = [];
+        if (normalizedName) {
+            urls.push(`https://blobs.animadex.net/ArtistOutputs/thumbs/${encodeURIComponent(normalizedName)}.webp`);
         }
+        urls.push(
+            `https://fastly.jsdelivr.net/gh/ThetaCursed/Anima-Assets@main/images/${partition}/${id}.webp`,
+            `https://raw.githubusercontent.com/ThetaCursed/Anima-Assets/main/images/${partition}/${id}.webp`,
+            `https://cdn.statically.io/gh/ThetaCursed/Anima-Assets/main/images/${partition}/${id}.webp`,
+        );
+        return [...new Set(urls)];
     }
 
     // 2. 创建 Modal DOM
@@ -1019,34 +1025,6 @@ async function openArtistSelectorModal(node, tagsWidget) {
         triggerFilter();
     };
     filterControls.appendChild(sortSelect);
-
-    // 镜像源切换下拉菜单
-    const cdnSelect = document.createElement("select");
-    cdnSelect.style.cssText = `
-        padding: 11px 18px;
-        background: rgba(10, 10, 15, 0.7);
-        border: 1px solid rgba(11, 140, 233, 0.2);
-        border-radius: 14px;
-        color: #7dd3fc;
-        font-size: 14px;
-        font-weight: 600;
-        outline: none;
-        cursor: pointer;
-        transition: all 0.25s ease;
-    `;
-    cdnSelect.innerHTML = `
-        <option value="jsdelivr" ${activeCdn === "jsdelivr" ? "selected" : ""}>${t("CDN: JsDelivr (Recommended)")}</option>
-        <option value="github" ${activeCdn === "github" ? "selected" : ""}>${t("CDN: GitHub Raw (Proxy)")}</option>
-        <option value="statically" ${activeCdn === "statically" ? "selected" : ""}>${t("CDN: Statically")}</option>
-    `;
-    cdnSelect.onchange = () => {
-        activeCdn = cdnSelect.value;
-        localStorage.setItem(CDN_STORAGE_KEY, activeCdn);
-        renderCurrentPage(); 
-    };
-    filterControls.appendChild(cdnSelect);
-
-
 
     // 右侧：功能按钮
     const actionControls = document.createElement("div");
@@ -2154,7 +2132,12 @@ async function openArtistSelectorModal(node, tagsWidget) {
                 img.loading = "lazy";
                 
                 const partition = item.p || 1;
-                const imgUrl = getImgUrl(partition, item.id);
+                const imageUrls = getImgUrls(partition, item.id, item.name);
+                const cachedUrl = imageUrls.find(url => isImageLoaded(url));
+                let imgUrl = cachedUrl || imageUrls.shift();
+                const fallbackUrls = cachedUrl
+                    ? imageUrls.filter(url => url !== cachedUrl)
+                    : imageUrls;
                 
                 let loader = null;
                 if (isImageLoaded(imgUrl)) {
@@ -2178,6 +2161,12 @@ async function openArtistSelectorModal(node, tagsWidget) {
                     markImageLoaded(imgUrl);
                 };
                 img.onerror = () => {
+                    const nextUrl = fallbackUrls.shift();
+                    if (nextUrl) {
+                        imgUrl = nextUrl;
+                        img.src = nextUrl;
+                        return;
+                    }
                     img.style.display = "none";
                     loader?.remove();
                     placeholder.style.opacity = "1"; 
