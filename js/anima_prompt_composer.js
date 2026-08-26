@@ -1,5 +1,6 @@
 import { app } from "../../scripts/app.js";
 import { t } from "./i18n.js";
+import { getEntryPreviewUrl } from "./anima_prompt_composer_preview.js";
 
 const SECTIONS = ["artist", "character", "clothing", "background", "pose"];
 const SECTION_META = {
@@ -253,9 +254,20 @@ function createDomThumb(entry) {
     `;
     if (entry.preview) {
         const img = document.createElement("img");
-        img.src = entry.preview;
+        const previewUrl = getEntryPreviewUrl(entry);
+        let directFallbackTried = previewUrl === entry.preview;
+        img.src = previewUrl;
         img.loading = "lazy";
         img.style.cssText = "width:100%;height:100%;object-fit:cover;display:block;";
+        img.onerror = () => {
+            if (!directFallbackTried && entry.preview) {
+                directFallbackTried = true;
+                img.src = entry.preview;
+                return;
+            }
+            img.remove();
+            box.textContent = (entry.title || "?").slice(0, 1).toUpperCase();
+        };
         box.appendChild(img);
     } else {
         box.textContent = (entry.title || "?").slice(0, 1).toUpperCase();
@@ -551,7 +563,7 @@ function drawComposerPreview(ctx, node, width, y, height) {
 function drawThumb(ctx, node, entry, x, y, width, height) {
     const color = SECTION_META[entry.section]?.color || "#38bdf8";
     roundedRect(ctx, x, y, width, height, 8, "rgba(255,255,255,0.06)", color);
-    const img = getPreviewImage(node, entry.preview);
+    const img = getPreviewImage(node, entry);
     if (img?.complete && img.naturalWidth > 0) {
         ctx.save();
         roundedClip(ctx, x, y, width, height, 8);
@@ -571,14 +583,20 @@ function drawThumb(ctx, node, entry, x, y, width, height) {
     ctx.fillText(t(SECTION_META[entry.section]?.labelKey || ""), x, y + height + 14);
 }
 
-function getPreviewImage(node, url) {
+function getPreviewImage(node, entry) {
+    const url = getEntryPreviewUrl(entry);
     if (!url) return null;
     if (!node._animaComposerImages) node._animaComposerImages = new Map();
     if (node._animaComposerImages.has(url)) return node._animaComposerImages.get(url);
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.onload = () => node.setDirtyCanvas?.(true, true);
-    img.onerror = () => node.setDirtyCanvas?.(true, true);
+    img.onerror = () => {
+        node.setDirtyCanvas?.(true, true);
+        if (url !== entry?.preview && ensureDomPreviewWidget(node)) {
+            updateComposerLayout(node);
+        }
+    };
     img.src = url;
     node._animaComposerImages.set(url, img);
     return img;
