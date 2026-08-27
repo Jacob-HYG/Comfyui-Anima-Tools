@@ -1156,8 +1156,25 @@ class AnimaPromptComposer:
         extra_pnginfo=None,
         unique_id=None,
     ):
+        seed_value = self._int_value(seed, -1)
         text = self._extract_resolved_prompt_text(resolved_prompt)
-        if text:
+
+        # resolved_prompt is persisted in the workflow so the UI can show the
+        # exact result chosen for seed=-1.  It must not override a fixed seed:
+        # in particular, a seed supplied through a link cannot be resolved by
+        # the pre-queue hook and the persisted text may belong to another run.
+        if seed_value >= 0:
+            selected, text = self._resolve_prompt_data(
+                enable_artist,
+                enable_character,
+                enable_clothing,
+                enable_background,
+                enable_pose,
+                character_detail,
+                seed_value,
+                artist_count,
+            )
+        elif text:
             selected = (
                 self._selection_from_workflow(extra_pnginfo, unique_id, text)
                 or self._normalize_selected(self._parse_selection_payload(resolved_prompt), text)

@@ -1,6 +1,7 @@
 import { app } from "../../scripts/app.js";
 import { t } from "./i18n.js";
 import { getEntryPreviewUrl } from "./anima_prompt_composer_preview.js";
+import { enablePartialExecutionSeedControl } from "./anima_prompt_composer_seed_control.js";
 
 const SECTIONS = ["artist", "character", "clothing", "background", "pose"];
 const SECTION_META = {
@@ -69,6 +70,7 @@ app.registerExtension({
 function setupComposerNode(node) {
     if (!node) return;
     node._animaComposerImages = node._animaComposerImages || new Map();
+    enablePartialExecutionSeedControl(getWidget(node, "seed"));
     hydrateComposerResolvedState(node);
     hideInternalWidgets(node);
     ensureComposerControls(node);
