@@ -949,14 +949,17 @@ class AnimaPromptComposer:
         name = str(item.get("name") or "").strip()
         if not name:
             return None
-        partition = item.get("p") or 1
         item_id = item.get("id") or ""
+        partition = item.get("p") or 1
+        preview_name = re.sub(r"\\([()[\]{}])", r"\1", name).strip()
         return {
             "section": "artist",
             "key": f"artist:{item_id or name}",
             "title": name,
             "subtitle": f"{item.get('post_count', 0)} works" if item.get("post_count") else "",
-            "preview": f"https://fastly.jsdelivr.net/gh/ThetaCursed/Anima-Assets@main/images/{partition}/{item_id}.webp" if item_id else "",
+            "preview": f"https://blobs.animadex.net/ArtistOutputs/thumbs/{urllib.parse.quote(preview_name, safe='')}.webp",
+            "preview_id": str(item_id),
+            "preview_partition": str(partition),
             "prompt_parts": [f"@{name}"],
         }
 
@@ -1269,8 +1272,25 @@ class AnimaPromptComposer:
         extra_pnginfo=None,
         unique_id=None,
     ):
+        seed_value = self._int_value(seed, -1)
         text = self._extract_resolved_prompt_text(resolved_prompt)
-        if text:
+
+        # resolved_prompt is persisted in the workflow so the UI can show the
+        # exact result chosen for seed=-1.  It must not override a fixed seed:
+        # in particular, a seed supplied through a link cannot be resolved by
+        # the pre-queue hook and the persisted text may belong to another run.
+        if seed_value >= 0:
+            selected, text = self._resolve_prompt_data(
+                enable_artist,
+                enable_character,
+                enable_clothing,
+                enable_background,
+                enable_pose,
+                character_detail,
+                seed_value,
+                artist_count,
+            )
+        elif text:
             selected = (
                 self._selection_from_workflow(extra_pnginfo, unique_id, text)
                 or self._normalize_selected(self._parse_selection_payload(resolved_prompt), text)
@@ -1410,7 +1430,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
 import asyncio
 import folder_paths
 from server import PromptServer
-from aiohttp import web
+from aiohttp import ClientSession, ClientTimeout, web
 import aiohttp
 import json
 import os
@@ -1838,6 +1858,14 @@ async def save_favorites_api(request):
 
 
 ANIMADEX_CHARACTER_SEARCH_API = "https://animadex.net/api/characters/search"
+ANIMADEX_CHARACTER_THUMB_BASE = "https://blobs.animadex.net/Outputs/thumbs"
+ANIMADEX_ARTIST_THUMB_BASE = "https://blobs.animadex.net/ArtistOutputs/thumbs"
+ANIMA_ASSETS_BASES = (
+    "https://fastly.jsdelivr.net/gh/ThetaCursed/Anima-Assets@main/images",
+    "https://raw.githubusercontent.com/ThetaCursed/Anima-Assets/main/images",
+)
+SAFEBOORU_POSTS_API = "https://safebooru.org/index.php"
+ANIMADEX_PREVIEW_MAX_BYTES = 8 * 1024 * 1024
 _animadex_character_cache = {}
 _animadex_character_cache_lock = threading.Lock()
 _animadex_character_cache_ttl = 60 * 60 * 12
@@ -1850,10 +1878,41 @@ def _normalize_animadex_text(value: str) -> str:
 def _animadex_character_cache_key(name: str, copyright: str) -> str:
     return f"{_normalize_animadex_text(name)}||{_normalize_animadex_text(copyright)}"
 
+def _animadex_character_preview_url(name: str, copyright: str) -> str:
+    raw_name = f"{name}, {copyright}" if copyright else name
+    encoded_name = urllib.parse.quote(raw_name, safe="")
+    return f"{ANIMADEX_CHARACTER_THUMB_BASE}/{encoded_name}.webp"
 
-def _select_animadex_character_result(
-    results: list, name: str, copyright: str
-) -> dict | None:
+def _normalize_animadex_artist_preview_name(name: str) -> str:
+    return re.sub(r"\\([()[\]{}])", r"\1", str(name or "")).strip()
+
+def _animadex_artist_preview_url(name: str) -> str:
+    encoded_name = urllib.parse.quote(_normalize_animadex_artist_preview_name(name), safe="")
+    return f"{ANIMADEX_ARTIST_THUMB_BASE}/{encoded_name}.webp"
+
+def _artist_preview_candidates(name: str, item_id: str = "", partition: str = "") -> list[str]:
+    candidates = [_animadex_artist_preview_url(name)]
+    item_id = str(item_id or "").strip()
+    partition = str(partition or "").strip()
+    if item_id.isdigit() and partition.isdigit():
+        candidates.extend(f"{base}/{partition}/{item_id}.webp" for base in ANIMA_ASSETS_BASES)
+    return candidates
+
+def _safebooru_artist_tag(name: str) -> str:
+    return _normalize_animadex_artist_preview_name(name).replace(" ", "_")
+
+def _safebooru_artist_search_url(name: str) -> str:
+    params = urllib.parse.urlencode({
+        "page": "dapi",
+        "s": "post",
+        "q": "index",
+        "json": "1",
+        "tags": _safebooru_artist_tag(name),
+        "limit": "1",
+    })
+    return f"{SAFEBOORU_POSTS_API}?{params}"
+
+def _select_animadex_character_result(results: list, name: str, copyright: str) -> dict | None:
     if not results:
         return None
 
@@ -1954,6 +2013,97 @@ async def get_official_character_api(request):
     except Exception as e:
         print(f"[Anima Tools] Error fetching AnimaDex official character tags: {e}")
         return web.json_response({"success": False, "error": str(e)}, status=502)
+
+async def _read_remote_preview(session, source_url: str):
+    try:
+        async with session.get(source_url, allow_redirects=False) as upstream:
+            if upstream.status != 200:
+                return None
+            content_type = str(upstream.headers.get("Content-Type", "")).split(";", 1)[0].strip().lower()
+            if not content_type.startswith("image/"):
+                return None
+            image_data = bytearray()
+            async for chunk in upstream.content.iter_chunked(64 * 1024):
+                image_data.extend(chunk)
+                if len(image_data) > ANIMADEX_PREVIEW_MAX_BYTES:
+                    return None
+            if not image_data:
+                return None
+            return bytes(image_data), content_type
+    except Exception:
+        return None
+
+async def _resolve_safebooru_artist_preview(session, artist_name: str) -> str:
+    try:
+        async with session.get(_safebooru_artist_search_url(artist_name), allow_redirects=False) as upstream:
+            if upstream.status != 200:
+                return ""
+            data = await upstream.json(content_type=None)
+        if not isinstance(data, list) or not data or not isinstance(data[0], dict):
+            return ""
+        preview_url = str(data[0].get("preview_url") or "").strip()
+        parsed = urllib.parse.urlparse(preview_url)
+        if parsed.scheme != "https" or parsed.hostname not in {"safebooru.org", "www.safebooru.org"}:
+            return ""
+        return preview_url
+    except Exception:
+        return ""
+
+async def _proxy_remote_previews(source_urls: list[str], preview_kind: str, artist_name: str = ""):
+    try:
+        timeout = ClientTimeout(total=15)
+        headers = {
+            "User-Agent": "ComfyUI-Anima-Tools/1.0 (+https://github.com/nregret/Comfyui-Anima-Tools)",
+            "Accept": "image/avif,image/webp,image/*,*/*;q=0.8",
+        }
+        async with ClientSession(timeout=timeout, headers=headers) as session:
+            for source_url in source_urls:
+                preview = await _read_remote_preview(session, source_url)
+                if preview:
+                    image_data, content_type = preview
+                    break
+            else:
+                fallback_url = await _resolve_safebooru_artist_preview(session, artist_name) if artist_name else ""
+                preview = await _read_remote_preview(session, fallback_url) if fallback_url else None
+                if not preview:
+                    return web.Response(status=404)
+                image_data, content_type = preview
+        return web.Response(
+            body=image_data,
+            content_type=content_type,
+            headers={"Cache-Control": "public, max-age=604800, immutable"},
+        )
+    except Exception as e:
+        print(f"[Anima Tools] Error proxying AnimaDex {preview_kind} preview: {e}")
+        return web.Response(status=502)
+
+@PromptServer.instance.routes.get("/anima-tools/character/preview")
+async def get_character_preview_api(request):
+    name = str(request.query.get("name", "")).strip()
+    copyright = str(request.query.get("copyright", "")).strip()
+    if not name:
+        return web.Response(status=400)
+    if len(name) > 160 or len(copyright) > 160:
+        return web.Response(status=400)
+    return await _proxy_remote_previews(
+        [_animadex_character_preview_url(name, copyright)],
+        "character",
+    )
+
+@PromptServer.instance.routes.get("/anima-tools/artist/preview")
+async def get_artist_preview_api(request):
+    name = str(request.query.get("name", "")).strip()
+    item_id = str(request.query.get("id", "")).strip()
+    partition = str(request.query.get("partition", "")).strip()
+    if not name or len(name) > 160:
+        return web.Response(status=400)
+    if len(item_id) > 32 or len(partition) > 16:
+        return web.Response(status=400)
+    return await _proxy_remote_previews(
+        _artist_preview_candidates(name, item_id, partition),
+        "artist",
+        artist_name=name,
+    )
 
 
 # ----------------- LoRA 相关的 API 路由 -----------------
